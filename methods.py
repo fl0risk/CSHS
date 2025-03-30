@@ -64,19 +64,19 @@ class ParameterOptimization:
             y_train_full, y_test = self.y.iloc[full_train_index], self.y.iloc[test_index]
 
             # Perform hyperparameter tuning using the different methods
-            # trials_grid_search = self.grid_search_method(
-            #     X_train_full=X_train_full, y_train_full=y_train_full, 
-            #     X_test=X_test, y_test=y_test
-            # )
-            # trials_random_search = self.grid_search_method(
-            #     X_train_full=X_train_full, y_train_full=y_train_full, 
-            #     X_test=X_test, y_test=y_test, 
-            #     num_try_random=135
-            # )
-            # trials_tpe = self.tpe_method(
-            #     X_train_full=X_train_full, y_train_full=y_train_full,
-            #     X_test=X_test, y_test=y_test
-            # )
+            trials_grid_search = self.grid_search_method(
+                X_train_full=X_train_full, y_train_full=y_train_full, 
+                X_test=X_test, y_test=y_test
+            )
+            trials_random_search = self.grid_search_method(
+                X_train_full=X_train_full, y_train_full=y_train_full, 
+                X_test=X_test, y_test=y_test, 
+                num_try_random=135
+            )
+            trials_tpe = self.tpe_method(
+                X_train_full=X_train_full, y_train_full=y_train_full,
+                X_test=X_test, y_test=y_test
+            )
             trials_gp_bo = self.gp_bo_method(
                 X_train_full=X_train_full, y_train_full=y_train_full,
                 X_test=X_test, y_test=y_test
@@ -84,16 +84,16 @@ class ParameterOptimization:
 
             # Concatenate the results from the different methods
 
-            for method in ['gp_bo']:#'grid_search','random_search', 'tpe', 'gp_bo']:
+            for method in ['grid_search','random_search', 'tpe', 'gp_bo']:#'grid_search','random_search', 'tpe', 'gp_bo']:
                 trials = eval(f'trials_{method}')
                 trials['fold'] = fold
                 trials['method'] = method
 
-                # if fold == 0 and method == 'grid_search':
-                #     final_results = trials
+                if fold == 0 and method == 'grid_search':
+                     final_results = trials
 
-                # else:
-                #     final_results = pd.concat([final_results, trials])
+                else:
+                     final_results = pd.concat([final_results, trials])
         final_results = trials
         final_results.reset_index(inplace=True)
         final_results.rename(columns={"index": "iter"}, inplace=True)
@@ -148,7 +148,7 @@ class ParameterOptimization:
         opt_params = modified_grid_search_tune_parameters(
             param_grid=param_grid, params=self.other_params, num_try_random=num_try_random, folds=folds, seed=self.seed, 
             train_set=train_set, use_gp_model_for_validation=False, verbose_eval=True,
-            num_boost_round=2, early_stopping_rounds=20
+            num_boost_round=1000, early_stopping_rounds=20
         )
 
         # Uncomment to evaluate the model on the test set using the best hyperparameters chosen by the algorithm:
@@ -458,7 +458,7 @@ class ParameterOptimization:
         return kf.split(self.X)
 
 
-    def _train_model_for_validation(self, X_train, y_train, X_val, y_val, params, num_boost_round: int = 2) -> float:
+    def _train_model_for_validation(self, X_train, y_train, X_val, y_val, params, num_boost_round: int = 1000) -> float:
         """This function performs the model training and evaluation and returns the prediction accuracy based on the validation set."""
         params_copy = params.copy()
         params_copy.update(self.other_params)
