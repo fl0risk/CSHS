@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import root_mean_squared_error, r2_score
 
-from utils_modelling import read_and_preprocess_dataset, split_dataset, save_gpboost_summary
+from utils_modelling import read_and_preprocess_dataset_onlyOneTask, split_dataset, save_gpboost_summary #read_and_preprocess_dataset
 
 
 
@@ -13,7 +13,8 @@ PATH = 'results_model/lin_model/'
 os.makedirs(PATH, exist_ok=True)
 
 def assess_linear_regression(classification: bool = False) -> None:
-    df = read_and_preprocess_dataset(classification)
+    #df = read_and_preprocess_dataset(classification)
+    df = read_and_preprocess_dataset_onlyOneTask()
     X, y, group_data = split_dataset(df)
 
     # Fit a grouped random effects model

@@ -8,7 +8,7 @@ import numpy as np
 from methods import ParameterOptimization
 
 #suite_id = 335 task_id = 361102 seed = 27225 result_folder = "OneTaskTest"
-
+#python run_experiments_one_task.py  --suite_id=335 --task_id=361102 --seed=27225 --result_folder=OneTaskTest
 def main(args):
     os.makedirs(args.result_folder, exist_ok=True)
     seed_folder = f"seed_{args.seed}"
@@ -25,14 +25,14 @@ def main(args):
      )
 
     # Run the experiment for the current task
-    obj = ParameterOptimization(X=X, y=y, categorical_indicator=categorical_indicator, suite_id=suite_id, try_num_leaves=False, seed=seed)
+    obj = ParameterOptimization(X=X, y=y, categorical_indicator=categorical_indicator, suite_id=suite_id, try_num_leaves=True,joint_tuning_depth_leaves=False, seed=seed)
     final_results_md = obj.run_methods()
 
-    obj = ParameterOptimization(X=X, y=y, categorical_indicator=categorical_indicator, suite_id=suite_id, try_num_leaves=True, seed=seed)
+    obj = ParameterOptimization(X=X, y=y, categorical_indicator=categorical_indicator, suite_id=suite_id, try_num_leaves=False,joint_tuning_depth_leaves=True, seed=seed)
     final_results_nl = obj.run_methods()
 
     # Format the DataFrame
-    final_results = pd.concat([final_results_md, final_results_nl], ignore_index=True)
+    final_results = pd.concat([final_results_nl,final_results_md], ignore_index=True) # add final_results_nl in the original version
     final_results["task_id"] = task_id
     final_results["classification"] = 1 if suite_id in [334, 337] else 0
 

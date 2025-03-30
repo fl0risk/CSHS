@@ -16,6 +16,18 @@ seeds = [27225, 32244, 34326, 92161, 99246, 108473, 117739, 147316, 235053, 2577
 SEED = seeds[12]
 
 
+def read_and_preprocess_dataset_onlyOneTask():
+    df = pd.DataFrame()
+
+    data = pd.read_csv(f"OneTaskTest/seed_27225/335_361102.csv")
+    df = pd.concat([df, data], ignore_index=True)
+
+            # Save the full dataset
+            # df.to_csv("final_dataset.csv", index=False)
+
+    df.drop(columns=["iter", "val_score", "test_log_loss", "test_f1_score", "test_rmse", "current_best_test_score", "current_best_test_log_loss", "current_best_test_f1_score", "current_best_test_rmse", "try_num_leaves", "fold", "method", "classification"], inplace=True)
+
+    return df
 
 def read_and_preprocess_dataset(classification=False):
     df = pd.DataFrame()
