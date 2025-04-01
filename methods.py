@@ -91,13 +91,10 @@ class ParameterOptimization:
 
                 if fold == 0 and method == 'grid_search':
                      final_results = trials
-
                 else:
                      final_results = pd.concat([final_results, trials])
-        final_results = trials
         final_results.reset_index(inplace=True)
         final_results.rename(columns={"index": "iter"}, inplace=True)
-
         return final_results
 
 
