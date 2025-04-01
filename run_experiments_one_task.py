@@ -26,17 +26,17 @@ def main(args):
      )
 
     # # Run the experiment for the current task
-    # obj = ParameterOptimization(X=X, y=y, categorical_indicator=categorical_indicator, suite_id=suite_id, try_num_leaves=False,joint_tuning_depth_leaves=False, seed=seed)
-    # final_results_md = obj.run_methods()
+    obj = ParameterOptimization(X=X, y=y, categorical_indicator=categorical_indicator, suite_id=suite_id, try_num_leaves=False,joint_tuning_depth_leaves=False, seed=seed)
+    final_results_md = obj.run_methods()
     
-    # obj = ParameterOptimization(X=X, y=y, categorical_indicator=categorical_indicator, suite_id=suite_id, try_num_leaves=True,joint_tuning_depth_leaves=False, seed=seed)
-    # final_results_nl = obj.run_methods()
+    obj = ParameterOptimization(X=X, y=y, categorical_indicator=categorical_indicator, suite_id=suite_id, try_num_leaves=True,joint_tuning_depth_leaves=False, seed=seed)
+    final_results_nl = obj.run_methods()
 
     obj = ParameterOptimization(X=X, y=y, categorical_indicator=categorical_indicator, suite_id=suite_id, try_num_leaves=False,joint_tuning_depth_leaves=True, seed=seed)
     final_results_joint = obj.run_methods()
 
     # Format the DataFrame
-    final_results = pd.concat([final_results_joint], ignore_index=True) # add [final_results_md,final_results_nl,final_results_joint]
+    final_results = pd.concat([final_results_md,final_results_nl,final_results_joint], ignore_index=True) # add [final_results_md,final_results_nl,final_results_joint]
     final_results["task_id"] = task_id
     final_results["classification"] = 1 if suite_id in [334, 337] else 0
 
