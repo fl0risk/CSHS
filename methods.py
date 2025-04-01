@@ -157,7 +157,7 @@ class ParameterOptimization:
         opt_params = modified_grid_search_tune_parameters(
             param_grid=param_grid, params=self.other_params, num_try_random=num_try_random, folds=folds, seed=self.seed, 
             train_set=train_set, use_gp_model_for_validation=False, verbose_eval=True,
-            num_boost_round=1, early_stopping_rounds=20
+            num_boost_round=1000, early_stopping_rounds=20
         )
 
         # Uncomment to evaluate the model on the test set using the best hyperparameters chosen by the algorithm:
@@ -469,7 +469,7 @@ class ParameterOptimization:
         return kf.split(self.X)
 
 
-    def _train_model_for_validation(self, X_train, y_train, X_val, y_val, params, num_boost_round: int = 1) -> float:
+    def _train_model_for_validation(self, X_train, y_train, X_val, y_val, params, num_boost_round: int = 1000) -> float:
         """This function performs the model training and evaluation and returns the prediction accuracy based on the validation set."""
         params_copy = params.copy()
         params_copy.update(self.other_params)
