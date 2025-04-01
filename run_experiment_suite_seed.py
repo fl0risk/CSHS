@@ -17,7 +17,8 @@ def main(args):
         path = f"data/{args.suite_id}_{task_id}"
 
         # Read the data from OpenML
-        dataset = task_id.get_dataset()
+        task = openml.tasks.get_task(task_id) #get task from OpenML
+        dataset = task.get_dataset()
         X, y, categorical_indicator, _ = dataset.get_data(
                 dataset_format="dataframe", target=dataset.default_target_attribute
         )
