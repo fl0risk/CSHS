@@ -157,7 +157,7 @@ class ParameterOptimization:
         opt_params = modified_grid_search_tune_parameters(
             param_grid=param_grid, params=self.other_params, num_try_random=num_try_random, folds=folds, seed=self.seed, 
             train_set=train_set, use_gp_model_for_validation=False, verbose_eval=True,
-            num_boost_round=1000, early_stopping_rounds=20
+            num_boost_round=100, early_stopping_rounds=20
         )
 
         # Uncomment to evaluate the model on the test set using the best hyperparameters chosen by the algorithm:
@@ -325,6 +325,7 @@ class ParameterOptimization:
             space.remove(Integer(1, 10, name='max_depth'))
             space.append(Categorical(categories=[-1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], name='max_depth'))
             space.append(Integer(2, 1024, name='num_leaves'))
+
         # Split the full training set into training and validation sets
         X_train, X_val, y_train, y_val = train_test_split(
             X_train_full, y_train_full, test_size=self.val_size, random_state=self.fixed_seeds[2]
@@ -469,7 +470,8 @@ class ParameterOptimization:
         return kf.split(self.X)
 
 
-    def _train_model_for_validation(self, X_train, y_train, X_val, y_val, params, num_boost_round: int = 1000) -> float:
+
+    def _train_model_for_validation(self, X_train, y_train, X_val, y_val, params, num_boost_round: int = 100) -> float:
         """This function performs the model training and evaluation and returns the prediction accuracy based on the validation set."""
         params_copy = params.copy()
         params_copy.update(self.other_params)
@@ -503,11 +505,14 @@ class ParameterOptimization:
         test_log_loss = []
         test_f1_scores = []
         test_rmse = []
+        #df.to_csv('Results/dataframe.csv', index=False)
         for _, row in df.iterrows():
             params_copy = row.drop(['val_score']).to_dict()
 
             # Ensure the correct types for specific parameters
             params_copy = {key: int(value) if key in ['min_data_in_leaf', 'max_depth', 'num_leaves', 'max_bin'] else value for key, value in params_copy.items()}
+            #print("----------This is a row", row)
+            #print("----------Here are the params_copy",params_copy)
             train_set_full = gpb.Dataset(X_train_full, label=y_train_full)
     
             # Train the model
@@ -588,7 +593,7 @@ class ParameterOptimization:
             df = pd.DataFrame(x_iters, columns=['learning_rate', 'min_data_in_leaf', 'lambda_l2', 'max_bin', 'bagging_fraction', 'feature_fraction', 'num_leaves'])
             df['max_depth'] = -1
         elif self.joint_tuning_depth_leaves:
-            df = pd.DataFrame(x_iters, columns=['learning_rate', 'min_data_in_leaf', 'max_depth','lambda_l2', 'max_bin', 'bagging_fraction', 'feature_fraction', 'num_leaves'])
+            df = pd.DataFrame(x_iters, columns=['learning_rate', 'min_data_in_leaf','lambda_l2', 'max_bin', 'bagging_fraction', 'feature_fraction','max_depth', 'num_leaves'])
         else:
             df = pd.DataFrame(x_iters, columns=['learning_rate', 'min_data_in_leaf', 'max_depth', 'lambda_l2', 'max_bin', 'bagging_fraction', 'feature_fraction'])
             df['num_leaves'] = 2**10

@@ -26,7 +26,7 @@ def main(args):
         task_id = int(task_id)
         seed = int(args.seed)
 
-        # Run the experiment for the current task
+        # # Run the experiment for the current task
         obj = ParameterOptimization(X=X, y=y, categorical_indicator=categorical_indicator, suite_id=suite_id, try_num_leaves=False, joint_tuning_depth_leaves=False, seed=seed)
         final_results_md = obj.run_methods()
 
