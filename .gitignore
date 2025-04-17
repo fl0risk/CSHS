@@ -1,3 +1,7 @@
 Semesterarbeit/
 results_model/
 timing.results.txt
+__pycache__
+Results/
+task_indices/
+plots/

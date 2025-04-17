@@ -11,17 +11,21 @@ def main(args):
     os.makedirs(args.result_folder, exist_ok=True)
     seed_folder = f"seed_{args.seed}"
     os.makedirs(os.path.join(args.result_folder, seed_folder), exist_ok=True) 
-    tasks = openml.study.get_suite(args.suite_id).tasks
+    tasks = [361113,361282,361283,361285,361286]
     for task_id in tasks:
         file_path = f"seed_{args.seed}/{args.suite_id}_{task_id}.csv"
-        path = f"data/{args.suite_id}_{task_id}"
+        path = f"{args.suite_id}_{task_id}"
+        # Read the data from local files
+        X = pd.read_csv(os.path.join(path, f"{args.suite_id}_{task_id}_X.csv"))
+        y = pd.read_csv(os.path.join(path, f"{args.suite_id}_{task_id}_y.csv"))
+        categorical_indicator = np.load(os.path.join(path, f"{args.suite_id}_{task_id}_categorical_indicator.npy"))
 
         # Read the data from OpenML
-        task = openml.tasks.get_task(task_id) #get task from OpenML
-        dataset = task.get_dataset()
-        X, y, categorical_indicator, _ = dataset.get_data(
-                dataset_format="dataframe", target=dataset.default_target_attribute
-        )
+        # task = openml.tasks.get_task(task_id) #get task from OpenML
+        # dataset = task.get_dataset()
+        # X, y, categorical_indicator, _ = dataset.get_data(
+        #         dataset_format="dataframe", target=dataset.default_target_attribute
+        # )
         suite_id = int(args.suite_id)
         task_id = int(task_id)
         seed = int(args.seed)

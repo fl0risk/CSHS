@@ -21,8 +21,9 @@ from utils import modified_grid_search_tune_parameters
 class ParameterOptimization:
     """This class is used to perform hyperparameter tuning using the proposed methods and to evaluate the model obtained using the best hyperparameters."""
 
-    def __init__(self, X, y, categorical_indicator, suite_id, test_size=0.2, val_size=0.2, try_num_leaves=False, seed=42,joint_tuning_depth_leaves = False):
-
+    def __init__(self, X, y, categorical_indicator, suite_id, test_size=0.2, val_size=0.2, try_num_leaves=False, seed=42,joint_tuning_depth_leaves = False,try_num_iter = False, try_max_depth = True):
+        if  (try_max_depth and try_num_leaves) or (try_num_leaves and joint_tuning_depth_leaves) or (try_max_depth and joint_tuning_depth_leaves):
+            raise ValueError("You can only tune num_leaves or max_depth at the same time. \n If you want both then use joint.")
         self.seed = seed
         self.fixed_seeds = self._generate_local_seeds()
 
@@ -46,7 +47,8 @@ class ParameterOptimization:
         self.suite_id = suite_id
         self.try_num_leaves = try_num_leaves
         self.joint_tuning_depth_leaves = joint_tuning_depth_leaves
-
+        self.try_num_iter = try_num_iter
+        self.try_max_depth = try_max_depth
         self.max_bin_val = np.min([self.X.shape[0], 10000])
         self.X = self._clean_column_names(self.X)
 
@@ -62,48 +64,54 @@ class ParameterOptimization:
         for fold, (full_train_index, test_index) in enumerate(self.splits):
             X_train_full, X_test = self.X.iloc[full_train_index], self.X.iloc[test_index]
             y_train_full, y_test = self.y.iloc[full_train_index], self.y.iloc[test_index]
-
+            if not self.try_num_iter:
             # Perform hyperparameter tuning using the different methods
-            if not self.joint_tuning_depth_leaves:
-                trials_grid_search = self.grid_search_method(
+                if not self.joint_tuning_depth_leaves:
+                    trials_grid_search = self.grid_search_method(
+                        X_train_full=X_train_full, y_train_full=y_train_full, 
+                        X_test=X_test, y_test=y_test
+                    )
+                trials_random_search = self.grid_search_method(
                     X_train_full=X_train_full, y_train_full=y_train_full, 
+                    X_test=X_test, y_test=y_test, 
+                    num_try_random=135
+                )
+                trials_tpe = self.tpe_method(
+                    X_train_full=X_train_full, y_train_full=y_train_full,
                     X_test=X_test, y_test=y_test
                 )
-            trials_random_search = self.grid_search_method(
-                X_train_full=X_train_full, y_train_full=y_train_full, 
-                X_test=X_test, y_test=y_test, 
-                num_try_random=135
-            )
-            trials_tpe = self.tpe_method(
-                X_train_full=X_train_full, y_train_full=y_train_full,
-                X_test=X_test, y_test=y_test
-            )
-            trials_gp_bo = self.gp_bo_method(
-                X_train_full=X_train_full, y_train_full=y_train_full,
-                X_test=X_test, y_test=y_test
-            )
+                trials_gp_bo = self.gp_bo_method(
+                    X_train_full=X_train_full, y_train_full=y_train_full,
+                    X_test=X_test, y_test=y_test
+                )
 
-            # Concatenate the results from the different methods
-            if not self.joint_tuning_depth_leaves:
-                for method in ['grid_search','random_search', 'tpe', 'gp_bo']:#'grid_search','random_search', 'tpe', 'gp_bo']:
-                    trials = eval(f'trials_{method}')
-                    trials['fold'] = fold
-                    trials['method'] = method
+                # Concatenate the results from the different methods
+                if not self.joint_tuning_depth_leaves:
+                    for method in ['grid_search','random_search', 'tpe', 'gp_bo']:#'grid_search','random_search', 'tpe', 'gp_bo']:
+                        trials = eval(f'trials_{method}')
+                        trials['fold'] = fold
+                        trials['method'] = method
 
-                    if fold == 0 and method == 'grid_search':
-                        final_results = trials
-                    else:
-                        final_results = pd.concat([final_results, trials])
+                        if fold == 0 and method == 'grid_search':
+                            final_results = trials
+                        else:
+                            final_results = pd.concat([final_results, trials])
+                else:
+                    for method in ['random_search', 'tpe', 'gp_bo']:#'grid_search','random_search', 'tpe', 'gp_bo']:
+                        trials = eval(f'trials_{method}')
+                        trials['fold'] = fold
+                        trials['method'] = method
+
+                        if fold == 0 and method == 'random_search':
+                            final_results = trials
+                        else:
+                            final_results = pd.concat([final_results, trials])
             else:
-                for method in ['random_search', 'tpe', 'gp_bo']:#'grid_search','random_search', 'tpe', 'gp_bo']:
-                    trials = eval(f'trials_{method}')
-                    trials['fold'] = fold
-                    trials['method'] = method
+                trials_tpe = self.tpe_method( #needs to be adjusted to the best method
+                    X_train_full=X_train_full, y_train_full=y_train_full,
+                    X_test=X_test, y_test=y_test
+                )
 
-                    if fold == 0 and method == 'random_search':
-                        final_results = trials
-                    else:
-                        final_results = pd.concat([final_results, trials])
         final_results.reset_index(inplace=True)
         final_results.rename(columns={"index": "iter"}, inplace=True)
         return final_results
@@ -137,7 +145,9 @@ class ParameterOptimization:
             param_grid['num_leaves'] = [2**1, 2**2, 2**3, 2**5, 2**10]
         if self.joint_tuning_depth_leaves:
             param_grid['max_depth'].append(-1)
-            param_grid['num_leaves'] = [2**1, 2**2, 2**3, 2**5, 2**10]    
+            param_grid['num_leaves'] = [2**1, 2**2, 2**3, 2**5, 2**10]
+        if self.try_num_iter:
+            param_grid['num_iterations'] = [1,2,5,10,20,50,100,200,500,1000]    
         # Perform hyperparameter tuning
         train_set = gpb.Dataset(X_train_full, label=y_train_full)
 
@@ -157,7 +167,7 @@ class ParameterOptimization:
         opt_params = modified_grid_search_tune_parameters(
             param_grid=param_grid, params=self.other_params, num_try_random=num_try_random, folds=folds, seed=self.seed, 
             train_set=train_set, use_gp_model_for_validation=False, verbose_eval=True,
-            num_boost_round=100, early_stopping_rounds=20
+            num_boost_round=1000, early_stopping_rounds=20
         )
 
         # Uncomment to evaluate the model on the test set using the best hyperparameters chosen by the algorithm:
@@ -218,39 +228,25 @@ class ParameterOptimization:
         # Define the objective function
         def objective_opt(trial):
             """Objective function for the Optuna optimization."""
+            #initialize param_grid with all possible parameters
+            param_grid = {
+                    'learning_rate': trial.suggest_float('learning_rate', 0.001, 1),
+                    'min_data_in_leaf': trial.suggest_int('min_data_in_leaf', 1, 1000),
+                    'lambda_l2': trial.suggest_float('lambda_l2', 0, 100),
+                    'max_bin': trial.suggest_int('max_bin', 255, self.max_bin_val),
+                    'bagging_fraction': trial.suggest_float('bagging_fraction', 0.5, 1),
+                    'feature_fraction': trial.suggest_float('feature_fraction', 0.5, 1)
+                }
             # Adjust the grid for the case where we tune the 'num_leaves' parameter
             if self.try_num_leaves:
-                param_grid = {
-                    'learning_rate': trial.suggest_float('learning_rate', 0.001, 1),
-                    'min_data_in_leaf': trial.suggest_int('min_data_in_leaf', 1, 1000),
-                    'lambda_l2': trial.suggest_float('lambda_l2', 0, 100),
-                    'max_bin': trial.suggest_int('max_bin', 255, self.max_bin_val),
-                    'num_leaves': trial.suggest_int('num_leaves', 2, 1024),
-                    'bagging_fraction': trial.suggest_float('bagging_fraction', 0.5, 1),
-                    'feature_fraction': trial.suggest_float('feature_fraction', 0.5, 1)
-                }
-
-            elif self.joint_tuning_depth_leaves: #add option for jointly tuning depth and num_leaves
-                param_grid = {
-                    'learning_rate': trial.suggest_float('learning_rate', 0.001, 1),
-                    'min_data_in_leaf': trial.suggest_int('min_data_in_leaf', 1, 1000),
-                    'max_depth': trial.suggest_categorical('max_depth',[-1,1,2,3,4,5,6,7,8,9,10]),
-                    'lambda_l2': trial.suggest_float('lambda_l2', 0, 100),
-                    'max_bin': trial.suggest_int('max_bin', 255, self.max_bin_val),
-                    'num_leaves': trial.suggest_int('num_leaves', 2, 1024),
-                    'bagging_fraction': trial.suggest_float('bagging_fraction', 0.5, 1),
-                    'feature_fraction': trial.suggest_float('feature_fraction', 0.5, 1)
-                }
-            else:
-                param_grid = {
-                    'learning_rate': trial.suggest_float('learning_rate', 0.001, 1),
-                    'min_data_in_leaf': trial.suggest_int('min_data_in_leaf', 1, 1000),
-                    'max_depth': trial.suggest_int('max_depth',1,10),
-                    'lambda_l2': trial.suggest_float('lambda_l2', 0, 100),
-                    'max_bin': trial.suggest_int('max_bin', 255, self.max_bin_val),
-                    'bagging_fraction': trial.suggest_float('bagging_fraction', 0.5, 1),
-                    'feature_fraction': trial.suggest_float('feature_fraction', 0.5, 1)
-                }
+                param_grid['num_leaves'] = trial.suggest_int('num_leaves', 2, 1024)
+            elif self.joint_tuning_depth_leaves:
+                param_grid['num_leaves'] = trial.suggest_int('num_leaves', 2, 1024)
+                param_grid['max_depth'] = trial.suggest_categorical('max_depth',[-1,1,2,3,4,5,6,7,8,9,10])
+            elif self.try_max_depth:
+                param_grid['max_depth'] = trial.suggest_categorical('max_depth',[1,2,3,4,5,6,7,8,9,10])
+            elif self.try_num_iter:
+                param_grid['num_iterations'] =trial.suggest_int('num_iterations',1,1000),  
             # Train the model
             score, best_iter = self._train_model_for_validation(
                 X_train, y_train, X_val, y_val, 
@@ -325,6 +321,9 @@ class ParameterOptimization:
             space.remove(Integer(1, 10, name='max_depth'))
             space.append(Categorical(categories=[-1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], name='max_depth'))
             space.append(Integer(2, 1024, name='num_leaves'))
+        elif self.try_num_iter:
+            space.append(Integer(1,1000, name = 'num_iterations'))
+
 
         # Split the full training set into training and validation sets
         X_train, X_val, y_train, y_val = train_test_split(
@@ -471,12 +470,15 @@ class ParameterOptimization:
 
 
 
-    def _train_model_for_validation(self, X_train, y_train, X_val, y_val, params, num_boost_round: int = 100) -> float:
+    def _train_model_for_validation(self, X_train, y_train, X_val, y_val, params, num_boost_round: int = 1000) -> float:
         """This function performs the model training and evaluation and returns the prediction accuracy based on the validation set."""
         params_copy = params.copy()
         params_copy.update(self.other_params)
         train_set = gpb.Dataset(X_train, label=y_train) 
         valid_set = gpb.Dataset(X_val, label=y_val)
+        if self.try_num_iter:
+            #here i need to change 
+            print()
         # Train the model
         bst = gpb.train(
             params=params_copy, train_set=train_set, num_boost_round=num_boost_round,
