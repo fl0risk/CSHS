@@ -6,10 +6,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import seaborn as sns
+from matplotlib.table import Table
+
 
 
 seeds = [27225, 34326,92161, 99246, 108473, 117739,  235053, 257787, 
-        89389, 443417, 572858, 620176, 671487, 710570, 773246, 936518] #32244,147316, 777646, 778572
+        89389, 443417, 572858, 620176, 671487, 710570, 773246, 936518,32244,147316, 777646, 778572]
 
 NUM_SEEDS = len(seeds)
 NUM_TASKS = 59 #can be removed after testing
@@ -60,6 +62,7 @@ def create_scores_dict(classification=False, rmse=False):
 
         for task_id in tasks:
             for l, seed in enumerate(seeds):
+                #print('Seed',seed, 'Suite_id', suite_id, 'Task_id', task_id)
                 data = pd.read_csv(f"/Users/floris/Desktop/ETH/ETH_FS25/Semesterarbeit/Results/seed_{seed}/{suite_id}_{task_id}.csv")
                 #data['current_best_test_score'] = data['current_best_test_score'].clip(0, 1)
                 if rmse:
@@ -172,7 +175,7 @@ def plot_scores_per_task_tuning_methods(scores, METHOD,names, classification=Fal
             ax = axes[k]
             ax.plot(
                 np.arange(NUM_ITERS),
-                mean_norm_scores[i][method_index -helper[i], :, k],
+                mean_norm_scores[i][method_index , :, k],
                 label=name_tuning[i],
                 color=palette[i],
                 marker=MARKERS[i],
@@ -181,17 +184,17 @@ def plot_scores_per_task_tuning_methods(scores, METHOD,names, classification=Fal
                 markevery=20
             )
             if confidence_interval:
-                ax.fill_between(np.arange(NUM_ITERS), lower_lim[i][method_index -helper[i], :, k], upper_lim[i][method_index -helper[i], :, k], hatch='/', alpha=0.2, color=palette[i])
-                ax.plot(np.arange(NUM_ITERS), lower_lim[i][method_index -helper[i], :, k], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
-                ax.plot(np.arange(NUM_ITERS), upper_lim[i][method_index -helper[i], :, k], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+                ax.fill_between(np.arange(NUM_ITERS), lower_lim[i][method_index , :, k], upper_lim[i][method_index , :, k], hatch='/', alpha=0.2, color=palette[i])
+                ax.plot(np.arange(NUM_ITERS), lower_lim[i][method_index , :, k], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+                ax.plot(np.arange(NUM_ITERS), upper_lim[i][method_index , :, k], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
 
             else:
-                ax.fill_between(np.arange(NUM_ITERS), mean_norm_scores[i][method_index -helper[i], :, k]
-                                    - std_norm_scores[i][method_index -helper[i], :, k], mean_norm_scores[i][method_index -helper[i], :, k] + std_norm_scores[i][method_index -helper[i], :, k], alpha=0.2, color=palette[i])
-                ax.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index -helper[i], :, k]
-                            - std_norm_scores[i][method_index -helper[i], :, k], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
-                ax.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index -helper[i], :, k]
-                            + std_norm_scores[i][method_index -helper[i], :, k], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+                ax.fill_between(np.arange(NUM_ITERS), mean_norm_scores[i][method_index , :, k]
+                                    - std_norm_scores[i][method_index , :, k], mean_norm_scores[i][method_index , :, k] + std_norm_scores[i][method_index , :, k], alpha=0.2, color=palette[i])
+                ax.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index , :, k]
+                            - std_norm_scores[i][method_index , :, k], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+                ax.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index , :, k]
+                            + std_norm_scores[i][method_index , :, k], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
 
             if len(names[k]) > 24:
                 names[k] = names[k][:24]
@@ -260,32 +263,35 @@ def plot_scores_per_task_tuning_methods(scores, METHOD,names, classification=Fal
 
 def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classification=False, adtm=False, confidence_interval=False, randomness=0, rmse=False):
     name_tuning = NAME_TUNING
+    if classification:
+        num_tasks = NUM_CLASS_TASKS
+    else: 
+        num_tasks = NUM_REGR_TASKS
     if METHOD == 'grid_search':
-        name_tuning = ['num_leaves','max_depth']
+        raise ValueError("Aggregated plots are not available for the 'grid_search' method.")
     if rmse:
         title = 'Average RMSE'
 
     else:
         title = 'Aggregated score'
 
-    if adtm:
-        title += ' (ADTM)'
+    # if adtm:
+    #     title += ' (ADTM)'
     
-    if classification:
-        title += ' for classification tasks'
+    # if classification:
+    #     title += ' for classification tasks'
 
-    else:
-        title += ' for regression tasks'
-    title += f' using the hyperparameter selction method: {METHOD}'
+    # else:
+    #     title += ' for regression tasks'
+    # title += f' using the hyperparameter selction method: {METHOD}'
     palette = set_plot_theme()
     plt.figure(figsize=(12, 8))
-    method_index = METHODS.index(METHOD)
-    helper = [name =='joint' for name in name_tuning] #used since for joint tuning there is one method less
+    method_index = METHODS_JOINT.index(METHOD)
     
-    norm_scores = [np.zeros((NUM_METHODS,NUM_ITERS)),np.zeros((NUM_METHODS,NUM_ITERS))
+    norm_scores = [np.zeros((NUM_METHODS_JOINT,NUM_ITERS)),np.zeros((NUM_METHODS_JOINT,NUM_ITERS))
                         ,np.zeros((NUM_METHODS_JOINT,NUM_ITERS))]
-    mean_seeds = [np.zeros((NUM_METHODS,NUM_ITERS,NUM_SEEDS)),np.zeros((NUM_METHODS,NUM_ITERS,NUM_SEEDS))
-                        ,np.zeros((NUM_METHODS_JOINT,NUM_ITERS,NUM_SEEDS))]
+    mean_seeds = [np.zeros((NUM_METHODS,NUM_ITERS,num_tasks)),np.zeros((NUM_METHODS,NUM_ITERS, num_tasks))
+                        ,np.zeros((NUM_METHODS_JOINT,NUM_ITERS,num_tasks))]
     mean_tasks = [np.zeros((NUM_METHODS,NUM_ITERS,NUM_SEEDS)),np.zeros((NUM_METHODS,NUM_ITERS,NUM_SEEDS))
                         ,np.zeros((NUM_METHODS_JOINT,NUM_ITERS,NUM_SEEDS))]
     avg_var_across_tasks = [np.zeros((NUM_METHODS,NUM_ITERS)),np.zeros((NUM_METHODS,NUM_ITERS))
@@ -302,7 +308,10 @@ def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classificatio
                         ,np.zeros((NUM_METHODS_JOINT,NUM_ITERS))]
     
     for i in range(len(name_tuning)):
-        norm_scores[i] = normalize_scores(scores[i], adtm)
+        if i==0 or i ==1:
+            norm_scores[i] = normalize_scores(scores[i][1:,:,:,:], adtm)
+        else:
+            norm_scores[i] = normalize_scores(scores[i], adtm)
         mean_norm_scores[i] = np.mean(norm_scores[i], axis=(2,3))
         std_norm_scores[i] = np.std(norm_scores[i], axis=(2,3))
         if confidence_interval:
@@ -310,34 +319,34 @@ def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classificatio
             upper_lim[i] = np.percentile(norm_scores[i], 95, axis=(2,3))
 
     for i in range(len(name_tuning)):
-        plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index -helper[i], :], label=NAME_TUNING[i], color=palette[i], marker=MARKERS[i], markersize=14, linewidth=2.5, markevery=15)
-
+        plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index, :], label=NAME_TUNING[i], color=palette[i], marker=MARKERS[i], markersize=14, linewidth=2.5, markevery=15)
+        #print(i, method_index , NAME_TUNING[i])
         if randomness == 1:       # Randomness due to the seeds
             mean_tasks[i] = np.mean(norm_scores[i], axis=2)
             avg_var_across_tasks[i] = np.std(mean_tasks[i], axis=-1)
 
-            plt.fill_between(np.arange(NUM_ITERS), mean_norm_scores[i][method_index -helper[i], :] - avg_var_across_tasks[i][method_index -helper[i], :], mean_norm_scores[i][method_index -helper[i], :] + avg_var_across_tasks[i][method_index -helper[i], :], alpha=0.2, color=palette[i])
-            plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index -helper[i], :] - avg_var_across_tasks[i][method_index -helper[i], :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
-            plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index -helper[i], :] + avg_var_across_tasks[i][method_index -helper[i], :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+            plt.fill_between(np.arange(NUM_ITERS), mean_norm_scores[i][method_index , :] - avg_var_across_tasks[i][method_index , :], mean_norm_scores[i][method_index , :] + avg_var_across_tasks[i][method_index , :], alpha=0.2, color=palette[i])
+            plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index , :] - avg_var_across_tasks[i][method_index , :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+            plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index , :] + avg_var_across_tasks[i][method_index , :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
         
         # Randomness due to the tasks
         elif randomness == 2:
             mean_seeds[i] = np.mean(norm_scores[i], axis=-1)
             avg_var_across_seeds[i] = np.std(mean_seeds[i], axis=-1)
-            plt.fill_between(np.arange(NUM_ITERS), mean_norm_scores[i][method_index -helper[i], :] - avg_var_across_seeds[i][method_index -helper[i], :], mean_norm_scores[i][method_index -helper[i], :] + avg_var_across_seeds[i][method_index -helper[i], :], alpha=0.2, color=palette[i])
-            plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index -helper[i], :] - avg_var_across_seeds[i][method_index -helper[i], :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
-            plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index -helper[i], :] + avg_var_across_seeds[i][method_index -helper[i], :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+            plt.fill_between(np.arange(NUM_ITERS), mean_norm_scores[i][method_index , :] - avg_var_across_seeds[i][method_index , :], mean_norm_scores[i][method_index , :] + avg_var_across_seeds[i][method_index , :], alpha=0.2, color=palette[i])
+            plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index , :] - avg_var_across_seeds[i][method_index , :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+            plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index , :] + avg_var_across_seeds[i][method_index , :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
 
         else:
             if confidence_interval:
-                plt.fill_between(np.arange(NUM_ITERS), lower_lim[i][method_index -helper[i], :], upper_lim[i][method_index -helper[i], :], hatch='/', alpha=0.2, color=palette[i])
-                plt.plot(np.arange(NUM_ITERS), lower_lim[i][method_index -helper[i], :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
-                plt.plot(np.arange(NUM_ITERS), upper_lim[i][method_index -helper[i], :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+                plt.fill_between(np.arange(NUM_ITERS), lower_lim[i][method_index , :], upper_lim[i][method_index , :], hatch='/', alpha=0.2, color=palette[i])
+                plt.plot(np.arange(NUM_ITERS), lower_lim[i][method_index , :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+                plt.plot(np.arange(NUM_ITERS), upper_lim[i][method_index , :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
             
             else:
-                plt.fill_between(np.arange(NUM_ITERS), mean_norm_scores[i] - std_norm_scores[i], mean_norm_scores[i] + std_norm_scores[i], alpha=0.2, color=palette[i])
-                plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i] - std_norm_scores[i], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
-                plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i] + std_norm_scores[i], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+                plt.fill_between(np.arange(NUM_ITERS), mean_norm_scores[i][method_index , :] - std_norm_scores[i][method_index , :], mean_norm_scores[i][method_index , :] + std_norm_scores[i][method_index , :], alpha=0.2, color=palette[i])
+                plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index , :] - std_norm_scores[i][method_index , :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+                plt.plot(np.arange(NUM_ITERS), mean_norm_scores[i][method_index , :] + std_norm_scores[i][method_index , :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
 
     for spine in plt.gca().spines.values():
         spine.set_edgecolor('dimgray')  # Set the desired color here
@@ -351,7 +360,7 @@ def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classificatio
     plt.gca().xaxis.set_major_locator(MaxNLocator(6))
     plt.gca().yaxis.set_major_locator(MaxNLocator(5))
 
-    plt.suptitle(title, fontsize=32)
+    plt.title(title, fontsize=24)
     plt.xlabel('Iteration', fontsize=30)
     plt.ylabel('Average aggregated test score', fontsize=30)
     if rmse:
@@ -367,7 +376,27 @@ def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classificatio
 
     else:
         plt.ylim(-0.5, 1)
-
+    
+    # # Create a table with the information as one row below the title
+    # table_data = [
+    #     ['Task', 'Regression' if classification == False else 'Classification', 
+    #      "Method", 'GP-Boost' if METHOD == 'gp_bo' else 'TPE' if METHOD == 'tpe' else 'Random Search', 
+    #      "Randomness", "Seeds" if randomness == 1 else "Tasks" if randomness == 2 else "Both", 
+    #      "ADTM", "Yes" if adtm else "No"]
+    # ]
+    # plt.subplots_adjust(bottom=0.2) 
+    # table = plt.table(cellText=table_data, colWidths=[0.15] * len(table_data[0]), loc='bottom', cellLoc='center', bbox=[0, -0.3, 1, 0.1])
+    
+    # table.auto_set_font_size(False)
+    # table.set_fontsize(10)
+    # for (row,col), cell in table.get_celld().items():
+    #     cell.set_height(0.05)
+    #     if col  % 2 == 0:
+    #         cell.get_text().set_fontweight('bold') 
+    #         cell.set_facecolor('lightgray')
+    #     else:
+    #         cell.set_facecolor('white')
+    #         cell.set_edgecolor('black')
     file = "agg_scores"
     file += "_classification" if classification else "_regression"
     if adtm:
@@ -391,3 +420,191 @@ def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classificatio
 
     plt.savefig(f"plots/{file}.png")
     plt.show()
+
+
+def aggregated_tasks_RandomSearch(scores, confidence_interval=False):
+    'Scores need to be of the form [scores, scores_class, RMSE]'
+    
+    palette = set_plot_theme()
+    norm_scores = [[np.zeros((NUM_ITERS)) for _ in range(3)] for _ in range(3)]
+    
+    mean_norm_scores = [[np.zeros((NUM_ITERS)) for _ in range(3)] for _ in range(3)]
+    std_norm_scores = [[np.zeros((NUM_ITERS)) for _ in range(3)] for _ in range(3)]
+    lower_lim = [[np.zeros((NUM_ITERS)) for _ in range(3)] for _ in range(3)]
+    upper_lim =  [[np.zeros((NUM_ITERS)) for _ in range(3)] for _ in range(3)]
+    mean_seeds = [[np.zeros((NUM_ITERS,NUM_TASKS)) for _ in range(3)] for _ in range(3)]
+    mean_tasks = [[np.zeros((NUM_ITERS,NUM_SEEDS)) for _ in range(3)] for _ in range(3)]
+    avg_var_across_tasks = [[np.zeros((NUM_METHODS,NUM_ITERS)) for _ in range(3)] for _ in range(3)]
+    avg_var_across_seeds = [[np.zeros((NUM_METHODS,NUM_ITERS)) for _ in range(3)] for _ in range(3)]
+    
+    for j in range(3): #scores = [scores_reg, scores_class, RMSE]
+        for i in range(len(NAME_TUNING)):
+            if i==0 or i ==1:
+                norm_scores[j][i] = normalize_scores(scores[j][i][1:,:,:,:], False if j==2 else True)
+            else:
+                norm_scores[j][i] = normalize_scores(scores[j][i],  False if j==2 else True)
+            mean_norm_scores[j][i] = np.mean(norm_scores[j][i], axis=(2,3))
+
+            std_norm_scores[j][i] = np.std(norm_scores[j][i], axis=(2,3))
+            if confidence_interval:
+                lower_lim[j][i] = np.percentile(norm_scores[j][i], 5, axis=(2,3))
+                upper_lim[j][i] = np.percentile(norm_scores[j][i], 95, axis=(2,3))
+    for method in METHODS_JOINT:
+        method_index = METHODS_JOINT.index(method)
+        _, axes = plt.subplots(3, 3, figsize=(20, 15))
+        axes = axes.flatten()
+        
+        for randomness in range(3):
+            for j in range(3):
+                ax = axes[randomness * 3 + j]  # Select the appropriate subplot
+                for i in range(len(NAME_TUNING)):
+                    ax.plot(
+                        np.arange(NUM_ITERS),
+                        mean_norm_scores[j][i][method_index,:],
+                        color=palette[i],
+                        marker=MARKERS[i],
+                        label=NAME_TUNING[i],
+                        markersize=14,
+                        linewidth=2.5,
+                        markevery=15
+                    )
+                    #print(i,j, NAME_TUNING[i])
+                    if randomness == 1:  # Randomness due to the seeds
+                        mean_tasks[j][i] = np.mean(norm_scores[j][i], axis=2)
+                        avg_var_across_tasks[j][i] = np.std(mean_tasks[j][i], axis=-1)
+
+                        ax.fill_between(
+                            np.arange(NUM_ITERS),
+                            mean_norm_scores[j][i][method_index , :] - avg_var_across_tasks[j][i][method_index , :],
+                            mean_norm_scores[j][i][method_index , :] + avg_var_across_tasks[j][i][method_index , :],
+                            alpha=0.2,
+                            color=palette[i]
+                        )
+                        ax.plot(
+                            np.arange(NUM_ITERS),
+                            mean_norm_scores[j][i][method_index , :] - avg_var_across_tasks[j][i][method_index , :],
+                            linestyle='--',
+                            color=palette[i],
+                            alpha=0.6,
+                            linewidth=2.5
+                        )
+                        ax.plot(
+                            np.arange(NUM_ITERS),
+                            mean_norm_scores[j][i][method_index , :] + avg_var_across_tasks[j][i][method_index , :],
+                            linestyle='--',
+                            color=palette[i],
+                            alpha=0.6,
+                            linewidth=2.5
+                        )
+
+                    elif randomness == 2:  # Randomness due to the tasks
+                        mean_seeds[j][i] = np.mean(norm_scores[j][i], axis=2)
+                        avg_var_across_seeds[j][i] = np.std(mean_seeds[j][i], axis=-1)
+
+                        ax.fill_between(
+                            np.arange(NUM_ITERS),
+                            mean_norm_scores[j][i][method_index , :] - avg_var_across_seeds[j][i][method_index , :],
+                            mean_norm_scores[j][i][method_index , :] + avg_var_across_seeds[j][i][method_index , :],
+                            alpha=0.2,
+                            color=palette[i]
+                        )
+                        ax.plot(
+                            np.arange(NUM_ITERS),
+                            mean_norm_scores[j][i][method_index , :] - avg_var_across_seeds[j][i][method_index , :],
+                            linestyle='--',
+                            color=palette[i],
+                            alpha=0.6,
+                            linewidth=2.5
+                        )
+                        ax.plot(
+                            np.arange(NUM_ITERS),
+                            mean_norm_scores[j][i][method_index , :] + avg_var_across_seeds[j][i][method_index , :],
+                            linestyle='--',
+                            color=palette[i],
+                            alpha=0.6,
+                            linewidth=2.5
+                        )
+
+                    else:
+                        if confidence_interval:
+                            ax.fill_between(
+                                np.arange(NUM_ITERS),
+                                lower_lim[j][i][method_index,:],
+                                upper_lim[j][i][method_index,:],
+                                hatch='/',
+                                alpha=0.2,
+                                color=palette[i]
+                            )
+                            ax.plot(
+                                np.arange(NUM_ITERS),
+                                lower_lim[j][i][method_index,:],
+                                linestyle='--',
+                                color=palette[i],
+                                alpha=0.6,
+                                linewidth=2.5
+                            )
+                            ax.plot(
+                                np.arange(NUM_ITERS),
+                                upper_lim[j][i][method_index,:],
+                                linestyle='--',
+                                color=palette[i],
+                                alpha=0.6,
+                                linewidth=2.5
+                            )
+                        else:
+                            ax.fill_between(
+                                np.arange(NUM_ITERS),
+                                mean_norm_scores[j][i][method_index,:] - std_norm_scores[j][i][method_index,:],
+                                mean_norm_scores[j][i][method_index,:] + std_norm_scores[j][i][method_index,:],
+                                alpha=0.2,
+                                color=palette[i]
+                            )
+                            ax.plot(
+                                np.arange(NUM_ITERS),
+                                mean_norm_scores[j][i][method_index,:] - std_norm_scores[j][i][method_index,:],
+                                linestyle='--',
+                                color=palette[i],
+                                alpha=0.6,
+                                linewidth=2.5
+                            )
+                            ax.plot(
+                                np.arange(NUM_ITERS),
+                                mean_norm_scores[j][i][method_index,:] + std_norm_scores[j][i][method_index,:],
+                                linestyle='--',
+                                color=palette[i],
+                                alpha=0.6,
+                                linewidth=2.5
+                            )
+
+                for spine in ax.spines.values():
+                    spine.set_edgecolor('dimgray')  # Set the desired color here
+                    spine.set_linewidth(1)  # Optionally, adjust the thickness
+
+                # Customize grid
+                ax.grid(True, color='lightgray', linewidth=0.5)
+
+                # Set the y-axis to have at most 5 ticks
+                ax.tick_params(axis='both', which='major', labelsize=28)
+                ax.xaxis.set_major_locator(MaxNLocator(6))
+                ax.yaxis.set_major_locator(MaxNLocator(5))
+                title = 'Regression' if j == 0 else 'Classification' if j == 1 else 'RMSE in Regression'
+                
+                title += f' and Randomness: '
+                title += 'Total' if randomness == 0 else 'Seeds' if randomness == 1 else 'Task'
+                ax.set_title(title, fontsize=18)
+                ax.set_xlim(0, NUM_ITERS - 1)
+                if j == 0 or j == 1:
+                    ax.set_ylim(0, 1)
+                else:
+                    ax.set_ylim(-0.5, 1)
+                    
+                for i, ax in enumerate(axes):
+                    if i % 3 == 0:  
+                        ax.set_ylabel('Average aggregated test score', fontsize=14)
+                    if i // 3 == 2: 
+                        ax.set_xlabel('Iteration', fontsize=14)
+        bigtitle = 'Random Search' if method == 'random_search' else 'TPE' if method == 'tpe' else 'GP-Boost'
+        plt.suptitle(bigtitle, fontsize=30)
+        plt.tight_layout()
+        plt.savefig(f"plots/agg_scores_{method}.png")
+        plt.show()
