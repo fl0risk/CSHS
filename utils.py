@@ -5,7 +5,7 @@ from pandas import Series as pd_Series
 from pandas import DataFrame as pd_DataFrame
 from pandas.api.types import is_sparse as is_dtype_sparse
 from gpboost import cv, Dataset
-
+import optuna
 
 
 def is_numeric(obj):
@@ -430,3 +430,122 @@ def modified_grid_search_tune_parameters(param_grid, train_set, params=None, num
         counter_num_comb = counter_num_comb + 1
 
     return {'best_params': best_params, 'best_iter': best_num_boost_round, 'best_score': best_score, 'all_combinations': all_combinations}
+def modify(param_grid):
+    '''Helper Function used in methods.py'''
+    for param in param_grid:
+        if is_numeric(param_grid[param]):
+            param_grid[param] = [param_grid[param]]
+
+        param_grid[param] = _format_check_1D_data(param_grid[param],
+                                                data_name=param, check_data_type=False,
+                                                check_must_be_int=False, convert_to_type=None)
+        
+    
+    # Determine combinations of parameter values that should be tried out
+    grid_size = _get_grid_size(param_grid)
+
+    return grid_size, param_grid
+
+
+
+# def run_then_return_val_score(param_comb,param_grid, train_set,num_boost_round, params=None, 
+#                                 gp_model=None,
+#                                 line_search_step_length=False,
+#                                 use_gp_model_for_validation=True, train_gp_model_cov_pars=True,
+#                                 folds=None, nfold=5, stratified=False, shuffle=True,
+#                                 metric=None, fobj=None, feval=None, init_model=None,
+#                                 feature_name='auto', categorical_feature='auto',
+#                                 early_stopping_rounds=None, fpreproc=None,
+#                                 verbose_eval=1, seed=0, callbacks=None):
+#     if verbose_eval < 2:
+#         verbose_eval_cv = False
+
+#     else:
+#         verbose_eval_cv = True
+
+#     best_score = 1e99
+#     current_score = 1e99
+#     best_params = {}
+#     best_num_boost_round = num_boost_round
+#     counter_num_comb = 1
+
+#     all_combinations = {}
+
+#     if 'max_bin' in param_comb:
+#         if train_set.handle is not None:
+#             raise ValueError("'train_set' cannot be constructed already when 'max_bin' is in 'param_grid' ")
+        
+#         else:
+#             train_set_not_constructed = copy.deepcopy(train_set)
+
+#     for param_comb_number in param_comb:
+#         param_comb = _get_param_combination(param_comb_number=param_comb_number, param_grid=param_grid)
+
+#         for param in param_comb:
+#             params[param] = param_comb[param]
+
+#         if verbose_eval >= 1:
+#             print("Trying parameter combination " + str(counter_num_comb) +
+#                   " of " + str(len(param_comb)) + ": " + str(param_comb))
+            
+#         if 'max_bin' in param_grid:
+#             train_set = copy.deepcopy(train_set_not_constructed)
+
+#         current_score_is_better = False
+
+#         try:
+#             cvbst = cv(params=params, train_set=train_set, num_boost_round=num_boost_round, gp_model=gp_model,
+#                        line_search_step_length=line_search_step_length,
+#                        use_gp_model_for_validation=use_gp_model_for_validation,
+#                        train_gp_model_cov_pars=train_gp_model_cov_pars,
+#                        folds=folds, nfold=nfold, stratified=stratified, shuffle=shuffle,
+#                        metric=metric, fobj=fobj, feval=feval, init_model=init_model,
+#                        feature_name=feature_name, categorical_feature=categorical_feature,
+#                        early_stopping_rounds=early_stopping_rounds, fpreproc=fpreproc,
+#                        verbose_eval=verbose_eval_cv, seed=seed, callbacks=callbacks,
+#                        eval_train_metric=False, return_cvbooster=False)
+            
+
+#             current_score = np.min(cvbst[next(iter(cvbst))])
+#             if current_score < best_score:
+#                 current_score_is_better = True
+
+#         except Exception as err: # Note: this is typically not called anymore since gpv.cv() now already contains a tryCatch statement
+#             if verbose_eval < 1:
+#                 print("Error for parameter combination " + str(counter_num_comb) +
+#                       " of " + str(len(param_comb)) + ": " + str(param_comb))
+                
+#         all_combinations[param_comb_number] = {'params': param_comb, 'score': current_score}
+
+#         if current_score_is_better:
+#             best_score = current_score
+#             best_params = param_comb
+    
+#             best_num_boost_round = np.argmin(cvbst[next(iter(cvbst))]) + 1
+
+#             if verbose_eval >= 1:
+#                 metric_name = list(cvbst.keys())[0]
+#                 metric_name = metric_name.split('-mean', 1)[0]
+#                 print("***** New best test score ("+metric_name+" = " + str(best_score) +
+#                       ") found for the following parameter combination:")
+#                 best_params_print = copy.deepcopy(best_params)
+#                 best_params_print['num_boost_round'] = best_num_boost_round
+#                 print(best_params_print)
+
+#         counter_num_comb = counter_num_comb + 1
+
+#     return {'best_params': best_params, 'best_iter': best_num_boost_round, 'best_score': best_score, 'all_combinations': all_combinations}
+
+
+
+
+
+# # def truncate(param, scores,k):
+# #     '''Function that takes a set of param combinations and their corresponding scores
+# #     and returns the top k performing combinations'''
+# #     sorted_params = sorted(scores.items(), key=lambda x: x[1])[:k]
+# #     param = [param_comb for param_comb, _ in sorted_params]
+# #     scores = [param_comb for param_comb, _ in sorted_params]
+# #     return param, scores
+# # def get_hyperparameter_configuration(n,search_space):
+# #     return 0

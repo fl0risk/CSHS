@@ -2,7 +2,7 @@
 
 import random
 import re
-
+import copy
 import gpboost as gpb
 import numpy as np
 import optuna
@@ -14,7 +14,7 @@ from skopt import gp_minimize
 from skopt.space import Real, Integer, Categorical
 from skopt.utils import use_named_args
 
-from utils import modified_grid_search_tune_parameters
+from utils import modified_grid_search_tune_parameters, modify,_get_param_combination
 
 
 
@@ -23,7 +23,7 @@ class ParameterOptimization:
 
     def __init__(self, X, y, categorical_indicator, suite_id, test_size=0.2, val_size=0.2, try_num_leaves=False, seed=42,joint_tuning_depth_leaves = False,try_num_iter = False, try_max_depth = True):
         if  (try_max_depth and try_num_leaves) or (try_num_leaves and joint_tuning_depth_leaves) or (try_max_depth and joint_tuning_depth_leaves):
-            raise ValueError("You can only tune num_leaves or max_depth at the same time. \n If you want both then use joint.")
+            raise ValueError("You can only perform num_leaves, max_depth or joint_tuning at the same time.")
         self.seed = seed
         self.fixed_seeds = self._generate_local_seeds()
 
@@ -45,10 +45,12 @@ class ParameterOptimization:
         self.test_size = test_size
         self.val_size = val_size
         self.suite_id = suite_id
+        #All options for tuning
         self.try_num_leaves = try_num_leaves
         self.joint_tuning_depth_leaves = joint_tuning_depth_leaves
         self.try_num_iter = try_num_iter
         self.try_max_depth = try_max_depth
+        
         self.max_bin_val = np.min([self.X.shape[0], 10000])
         self.X = self._clean_column_names(self.X)
 
@@ -64,8 +66,7 @@ class ParameterOptimization:
         for fold, (full_train_index, test_index) in enumerate(self.splits):
             X_train_full, X_test = self.X.iloc[full_train_index], self.X.iloc[test_index]
             y_train_full, y_test = self.y.iloc[full_train_index], self.y.iloc[test_index]
-            if not self.try_num_iter:
-            # Perform hyperparameter tuning using the different methods
+            if not self.try_num_iter: #tune without number of boosting iterations
                 if not self.joint_tuning_depth_leaves:
                     trials_grid_search = self.grid_search_method(
                         X_train_full=X_train_full, y_train_full=y_train_full, 
@@ -74,7 +75,7 @@ class ParameterOptimization:
                 trials_random_search = self.grid_search_method(
                     X_train_full=X_train_full, y_train_full=y_train_full, 
                     X_test=X_test, y_test=y_test, 
-                    num_try_random=135
+                    num_try_random=135 
                 )
                 trials_tpe = self.tpe_method(
                     X_train_full=X_train_full, y_train_full=y_train_full,
@@ -84,20 +85,22 @@ class ParameterOptimization:
                     X_train_full=X_train_full, y_train_full=y_train_full,
                     X_test=X_test, y_test=y_test
                 )
-
-                # Concatenate the results from the different methods
-                if not self.joint_tuning_depth_leaves:
-                    for method in ['grid_search','random_search', 'tpe', 'gp_bo']:#'grid_search','random_search', 'tpe', 'gp_bo']:
-                        trials = eval(f'trials_{method}')
-                        trials['fold'] = fold
-                        trials['method'] = method
-
-                        if fold == 0 and method == 'grid_search':
-                            final_results = trials
-                        else:
-                            final_results = pd.concat([final_results, trials])
-                else:
-                    for method in ['random_search', 'tpe', 'gp_bo']:#'grid_search','random_search', 'tpe', 'gp_bo']:
+            if self.try_num_iter: #tune with number of boositng iterations
+                trials_random_search = self.grid_search_method(
+                    X_train_full=X_train_full, y_train_full=y_train_full, 
+                    X_test=X_test, y_test=y_test, 
+                    num_try_random=135 
+                )
+                trials_tpe = self.tpe_method(
+                    X_train_full=X_train_full, y_train_full=y_train_full,
+                    X_test=X_test, y_test=y_test
+                )
+                trials_gp_bo = self.gp_bo_method(
+                    X_train_full=X_train_full, y_train_full=y_train_full,
+                    X_test=X_test, y_test=y_test
+                )
+            if self.joint_tuning_depth_leaves or self.try_num_iter:
+                for method in ['random_search','tpe', 'gp_bo']: 
                         trials = eval(f'trials_{method}')
                         trials['fold'] = fold
                         trials['method'] = method
@@ -107,11 +110,16 @@ class ParameterOptimization:
                         else:
                             final_results = pd.concat([final_results, trials])
             else:
-                trials_tpe = self.tpe_method( #needs to be adjusted to the best method
-                    X_train_full=X_train_full, y_train_full=y_train_full,
-                    X_test=X_test, y_test=y_test
-                )
+                for method in ['grid_search','random_search', 'tpe', 'gp_bo']:
+                        trials = eval(f'trials_{method}')
+                        trials['fold'] = fold
+                        trials['method'] = method
 
+                        if fold == 0 and method == 'grid_search':
+                            final_results = trials
+                        else:
+                            final_results = pd.concat([final_results, trials])
+            
         final_results.reset_index(inplace=True)
         final_results.rename(columns={"index": "iter"}, inplace=True)
         return final_results
@@ -119,6 +127,7 @@ class ParameterOptimization:
 
     def grid_search_method(self, X_train_full, y_train_full, X_test, y_test, num_try_random=None):
         """This function performs fixed/random grid search on the model."""
+        self.min_score = float('inf')
         # Define the hyperparameter grid
         param_grid = {
             'learning_rate': [0.01, 0.1, 1],
@@ -147,7 +156,7 @@ class ParameterOptimization:
             param_grid['max_depth'].append(-1)
             param_grid['num_leaves'] = [2**1, 2**2, 2**3, 2**5, 2**10]
         if self.try_num_iter:
-            param_grid['num_iterations'] = [1,2,5,10,20,50,100,200,500,1000]    
+            param_grid['n_iter'] = [1,2,5,10,20,50,100,200,500,1000]    
         # Perform hyperparameter tuning
         train_set = gpb.Dataset(X_train_full, label=y_train_full)
 
@@ -164,12 +173,17 @@ class ParameterOptimization:
         val_set_idx = X_val.index.values
         folds = [(train_set_idx, val_set_idx)]
 
-        opt_params = modified_grid_search_tune_parameters(
-            param_grid=param_grid, params=self.other_params, num_try_random=num_try_random, folds=folds, seed=self.seed, 
-            train_set=train_set, use_gp_model_for_validation=False, verbose_eval=True,
-            num_boost_round=1000, early_stopping_rounds=20
-        )
-
+        if self.try_num_iter:
+            opt_params = {'all_combinations':self._generate_random_grid_seach_combinations(
+                param_grid=param_grid,
+                num_try_random=num_try_random
+            )}
+        else:
+            opt_params = modified_grid_search_tune_parameters(
+                param_grid=param_grid, params=self.other_params, num_try_random=num_try_random, folds=folds, seed=self.seed, 
+                train_set=train_set, use_gp_model_for_validation=False, verbose_eval=3,
+                num_boost_round=1000, early_stopping_rounds=20
+            )
         # Uncomment to evaluate the model on the test set using the best hyperparameters chosen by the algorithm:
 
         # train_set_full = gpb.Dataset(self.X_train_full, label=self.y_train_full)
@@ -204,15 +218,21 @@ class ParameterOptimization:
             df_trials['val_score'] = df_trials.pop('val_score')
 
         # Compute the test scores
-        df_trials = self._compute_test_scores(
-            X_train_full=X_train_full, y_train_full=y_train_full, X_test=X_test, y_test=y_test,
-            df=df_trials, best_iter=opt_params['best_iter']
-        )
-
-        # Add the 'try_num_leaves' and 'joint_tuning_depth_leaves columns to the DataFrame
+        if self.try_num_iter:
+            df_trials = self._compute_test_scores(
+                X_train_full=X_train_full, y_train_full=y_train_full, X_test=X_test, y_test=y_test,
+                df=df_trials
+            )
+        else:
+            df_trials = self._compute_test_scores(
+                X_train_full=X_train_full, y_train_full=y_train_full, X_test=X_test, y_test=y_test,
+                df=df_trials, best_iter=opt_params['best_iter']
+            )
+        # Add the 'try_num_leaves', 'try_num_iter' and 'joint_tuning_depth_leaves' columns to the DataFrame
         df_trials['try_num_leaves'] = self.try_num_leaves
         df_trials['joint_tuning_depth_leaves'] = self.joint_tuning_depth_leaves
-        return df_trials # score, opt_params['best_params'], opt_params['best_iter']
+        df_trials['try_num_iter'] = self.try_num_iter
+        return df_trials
 
 
     def tpe_method(self, X_train_full, y_train_full, X_test, y_test):
@@ -240,14 +260,15 @@ class ParameterOptimization:
             # Adjust the grid for the case where we tune the 'num_leaves' parameter
             if self.try_num_leaves:
                 param_grid['num_leaves'] = trial.suggest_int('num_leaves', 2, 1024)
-            elif self.joint_tuning_depth_leaves:
+            if self.joint_tuning_depth_leaves:
                 param_grid['num_leaves'] = trial.suggest_int('num_leaves', 2, 1024)
                 param_grid['max_depth'] = trial.suggest_categorical('max_depth',[-1,1,2,3,4,5,6,7,8,9,10])
-            elif self.try_max_depth:
+            if self.try_max_depth:
                 param_grid['max_depth'] = trial.suggest_categorical('max_depth',[1,2,3,4,5,6,7,8,9,10])
-            elif self.try_num_iter:
-                param_grid['num_iterations'] =trial.suggest_int('num_iterations',1,1000),  
+            if self.try_num_iter:
+                param_grid['n_iter'] =trial.suggest_int('n_iter',1,1000)  
             # Train the model
+            #print('\n Here is the param_grid:',param_grid)
             score, best_iter = self._train_model_for_validation(
                 X_train, y_train, X_val, y_val, 
                 param_grid
@@ -262,8 +283,9 @@ class ParameterOptimization:
 
         study = optuna.create_study(direction='minimize', sampler=optuna.samplers.TPESampler(seed=self.seed))
         study.optimize(objective_opt, n_trials=135)
+        
         df = study.trials_dataframe()
-
+        #print('Column names of the dataframe returned by TPE:', df.columns)
         # Uncomment to evaluate the model on the test set using the best hyperparameters chosen by the algorithm:
 
         # train_set_full = gpb.Dataset(self.X_train_full, label=self.y_train_full)
@@ -293,9 +315,10 @@ class ParameterOptimization:
             df=df_trials, best_iter=self.best_iter
         )
 
-        # Add the 'try_num_leaves' and 'joint_tuning_depth_leaves columns to the DataFrame
+        # Add the 'try_num_leaves', 'joint_tuning_depth_leaves and try_num_iter columns to the DataFrame
         df_trials['try_num_leaves'] = self.try_num_leaves
         df_trials['joint_tuning_depth_leaves'] = self.joint_tuning_depth_leaves
+        df_trials['try_num_iter'] = self.try_num_iter
         return df_trials # score, study.best_params, self.best_iter
 
 
@@ -317,12 +340,12 @@ class ParameterOptimization:
         if self.try_num_leaves:
             space.remove(Integer(1, 10, name='max_depth'))
             space.append(Integer(2, 1024, name='num_leaves'))
-        elif self.joint_tuning_depth_leaves:
+        if self.joint_tuning_depth_leaves:
             space.remove(Integer(1, 10, name='max_depth'))
             space.append(Categorical(categories=[-1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], name='max_depth'))
             space.append(Integer(2, 1024, name='num_leaves'))
-        elif self.try_num_iter:
-            space.append(Integer(1,1000, name = 'num_iterations'))
+        if self.try_num_iter:
+            space.append(Integer(1,1000, name = 'n_iter')) 
 
 
         # Split the full training set into training and validation sets
@@ -350,7 +373,7 @@ class ParameterOptimization:
 
             return score
 
-        result = gp_minimize(objective_gp_bo, space, n_calls=135, random_state=self.seed)
+        result = gp_minimize(objective_gp_bo, space, n_calls=135, random_state=self.seed) 
 
         # Restore the 'numpy' module to its original state
         delattr(np, 'int')
@@ -386,9 +409,10 @@ class ParameterOptimization:
             df=df_trials, best_iter=self.best_iter
         )
 
-       # Add the 'try_num_leaves' and 'joint_tuning_depth_leaves columns to the DataFrame
+       # Add the 'try_num_leaves', 'joint_tuning_depth_leaves columns and try_num_iter to the DataFrame
         df_trials['try_num_leaves'] = self.try_num_leaves
         df_trials['joint_tuning_depth_leaves'] = self.joint_tuning_depth_leaves
+        df_trials['try_num_iter'] = self.try_num_iter
         return df_trials # score, best_parameters, self.best_iter
     
 
@@ -473,18 +497,22 @@ class ParameterOptimization:
     def _train_model_for_validation(self, X_train, y_train, X_val, y_val, params, num_boost_round: int = 1000) -> float:
         """This function performs the model training and evaluation and returns the prediction accuracy based on the validation set."""
         params_copy = params.copy()
+        #print('Params Copy TMFV\n',params_copy)
         params_copy.update(self.other_params)
         train_set = gpb.Dataset(X_train, label=y_train) 
         valid_set = gpb.Dataset(X_val, label=y_val)
-        if self.try_num_iter:
-            #here i need to change 
-            print()
         # Train the model
-        bst = gpb.train(
-            params=params_copy, train_set=train_set, num_boost_round=num_boost_round,
-            valid_sets=[valid_set], early_stopping_rounds=20,
-            verbose_eval=False
-        )
+        if self.try_num_iter:
+            bst = gpb.train(
+                params=params_copy, train_set=train_set, valid_sets=[valid_set],
+                verbose_eval=False 
+            )
+        else:
+            bst = gpb.train(
+                params=params_copy, train_set=train_set, num_boost_round=num_boost_round,
+                valid_sets=[valid_set], early_stopping_rounds=20,
+                verbose_eval=False
+            )
         y_pred = bst.predict(data=X_val, pred_latent=False) #pred_latent = FALSE => response variable is predicted
 
         # Get the best number of iterations
@@ -501,7 +529,7 @@ class ParameterOptimization:
         return score, best_iter
     
 
-    def _compute_test_scores(self, X_train_full, y_train_full, X_test, y_test, df, best_iter: int) -> float:
+    def _compute_test_scores(self, X_train_full, y_train_full, X_test, y_test, df, best_iter = None) -> float:
         """This function trains the model on the full training set and evaluates it on the test set, adding the 'test_score' column to the corresponding DataFrame."""
         test_scores = []
         test_log_loss = []
@@ -510,18 +538,23 @@ class ParameterOptimization:
         #df.to_csv('Results/dataframe.csv', index=False)
         for _, row in df.iterrows():
             params_copy = row.drop(['val_score']).to_dict()
-
             # Ensure the correct types for specific parameters
-            params_copy = {key: int(value) if key in ['min_data_in_leaf', 'max_depth', 'num_leaves', 'max_bin'] else value for key, value in params_copy.items()}
+            params_copy = {key: int(value) if key in ['min_data_in_leaf', 'max_depth', 'num_leaves', 'max_bin','n_iter'] else value for key, value in params_copy.items()} 
             #print("----------This is a row", row)
             #print("----------Here are the params_copy",params_copy)
             train_set_full = gpb.Dataset(X_train_full, label=y_train_full)
     
             # Train the model
-            bst = gpb.train(
-                params=params_copy, train_set=train_set_full, num_boost_round=best_iter,
-                verbose_eval=False
-            )
+            if self.try_num_iter:
+                bst = gpb.train(
+                    params=params_copy, train_set=train_set_full,
+                    verbose_eval=False
+                )
+            else:
+                bst = gpb.train(
+                    params=params_copy, train_set=train_set_full, num_boost_round=best_iter,
+                    verbose_eval=False
+                )
             y_pred = bst.predict(data=X_test, pred_latent=False)
 
             # Evaluate the model based on the respective task
@@ -575,32 +608,59 @@ class ParameterOptimization:
         """This function modifies the DataFrame for the TPE method."""
         # Drop unnecessary columns from the DataFrame with the trials
         df.drop(columns=['number', 'datetime_start', 'datetime_complete', 'duration', 'state'], inplace=True)
-
-        if self.try_num_leaves:
+        if self.try_num_leaves and not(self.try_num_iter):
             df.columns = ['val_score', 'bagging_fraction', 'feature_fraction', 'lambda_l2', 'learning_rate', 'max_bin', 'min_data_in_leaf', 'num_leaves']
             df['max_depth'] = -1
-        elif self.joint_tuning_depth_leaves:
+        elif self.joint_tuning_depth_leaves and not(self.try_num_iter):
             df.columns = ['val_score', 'bagging_fraction', 'feature_fraction', 'lambda_l2', 'learning_rate', 'max_bin','max_depth', 'min_data_in_leaf', 'num_leaves']
-        else:
+        elif self.try_max_depth and not(self.try_num_iter):
             df.columns = ['val_score','bagging_fraction', 'feature_fraction', 'lambda_l2', 'learning_rate', 'max_bin', 'max_depth', 'min_data_in_leaf']
             df['num_leaves'] = 2**10
-
+        elif self.try_num_iter and self.try_max_depth:
+            df.columns = ['val_score','bagging_fraction', 'feature_fraction', 'lambda_l2', 'learning_rate', 'max_bin', 'max_depth', 'min_data_in_leaf','n_iter','num_leaves']
+            df['num_leaves'] = 2**10
+        elif self.try_num_iter and self.try_num_leaves:
+            df.columns = ['val_score', 'bagging_fraction', 'feature_fraction', 'lambda_l2', 'learning_rate', 'max_bin', 'min_data_in_leaf', 'n_iter','num_leaves']
+            df['max_depth'] = -1
+        elif self.try_num_iter and self.joint_tuning_depth_leaves:
+            df.columns = ['val_score', 'bagging_fraction', 'feature_fraction', 'lambda_l2', 'learning_rate', 'max_bin','max_depth', 'min_data_in_leaf','n_iter','num_leaves']
         return df
     
 
     def _convert_array_to_df(self, x_iters, func_vals):
         """This function converts the arrays from the GP-BO trials into a DataFrame."""
 
-        if self.try_num_leaves:
+        if self.try_num_leaves and not(self.try_num_iter):
             df = pd.DataFrame(x_iters, columns=['learning_rate', 'min_data_in_leaf', 'lambda_l2', 'max_bin', 'bagging_fraction', 'feature_fraction', 'num_leaves'])
             df['max_depth'] = -1
-        elif self.joint_tuning_depth_leaves:
+        elif self.joint_tuning_depth_leaves and not(self.try_num_iter):
             df = pd.DataFrame(x_iters, columns=['learning_rate', 'min_data_in_leaf','lambda_l2', 'max_bin', 'bagging_fraction', 'feature_fraction','max_depth', 'num_leaves'])
-        else:
+        elif self.try_max_depth and not(self.try_num_iter):
             df = pd.DataFrame(x_iters, columns=['learning_rate', 'min_data_in_leaf', 'max_depth', 'lambda_l2', 'max_bin', 'bagging_fraction', 'feature_fraction'])
             df['num_leaves'] = 2**10
-        
+        elif self.try_num_iter and self.try_max_depth:
+            df = pd.DataFrame(x_iters, columns=['learning_rate', 'min_data_in_leaf', 'max_depth', 'lambda_l2', 'max_bin', 'bagging_fraction', 'feature_fraction','n_iter'])
+            df['num_leaves'] = 2**10
+        elif self.try_num_iter and self.try_num_leaves:
+            df = pd.DataFrame(x_iters, columns=['learning_rate', 'min_data_in_leaf', 'lambda_l2', 'max_bin', 'bagging_fraction', 'feature_fraction', 'num_leaves','n_iter'])
+            df['max_depth'] = -1
+        elif self.joint_tuning_depth_leaves and self.try_num_iter:
+            df = pd.DataFrame(x_iters, columns=['learning_rate', 'min_data_in_leaf','lambda_l2', 'max_bin', 'bagging_fraction', 'feature_fraction','max_depth', 'num_leaves','n_iter'])
         # Convert the 'score' array into a column for the DataFrame
         df['val_score'] = func_vals
 
         return df
+    def _generate_random_grid_seach_combinations(self,param_grid,num_try_random=None):
+        grid_size, param_grid = modify(param_grid)
+        if num_try_random is not None:
+            if num_try_random > grid_size:
+                raise ValueError("num_try_random is larger than the number of all possible combinations of parameters in param_grid ")
+            
+            try_param_combs = np.random.RandomState(self.seed).choice(a=grid_size, size=num_try_random, replace=False)
+
+        all_combinations = {}
+        for param_comb_number in try_param_combs:
+            param_comb = _get_param_combination(param_comb_number=param_comb_number, param_grid=param_grid)
+            all_combinations[param_comb_number] = {'params': param_comb, 'score': np.nan}
+
+        return all_combinations
