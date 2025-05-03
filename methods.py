@@ -1,5 +1,5 @@
 """Author: Ioana Iacobici https://github.com/iiacobici modified by Floris Koster https://github.com/fl0risk"""
-
+import os
 import random
 import re
 import copy
@@ -14,14 +14,15 @@ from skopt import gp_minimize
 from skopt.space import Real, Integer, Categorical
 from skopt.utils import use_named_args
 
-from utils import modified_grid_search_tune_parameters, modify,_get_param_combination
+from utils import modified_grid_search_tune_parameters, modify,_get_param_combination,truncate,tune_pars_TPE_algorithm_optuna
 
 
 
 class ParameterOptimization:
     """This class is used to perform hyperparameter tuning using the proposed methods and to evaluate the model obtained using the best hyperparameters."""
 
-    def __init__(self, X, y, categorical_indicator, suite_id, test_size=0.2, val_size=0.2, try_num_leaves=False, seed=42,joint_tuning_depth_leaves = False,try_num_iter = False, try_max_depth = True):
+    def __init__(self, X, y, categorical_indicator, suite_id, test_size=0.2, val_size=0.2, try_num_leaves=False, seed=42,joint_tuning_depth_leaves = False,try_num_iter = False, 
+                hyperband = False, try_max_depth = True):
         if  (try_max_depth and try_num_leaves) or (try_num_leaves and joint_tuning_depth_leaves) or (try_max_depth and joint_tuning_depth_leaves):
             raise ValueError("You can only perform num_leaves, max_depth or joint_tuning at the same time.")
         self.seed = seed
@@ -50,7 +51,7 @@ class ParameterOptimization:
         self.joint_tuning_depth_leaves = joint_tuning_depth_leaves
         self.try_num_iter = try_num_iter
         self.try_max_depth = try_max_depth
-        
+        self.hyperband = hyperband
         self.max_bin_val = np.min([self.X.shape[0], 10000])
         self.X = self._clean_column_names(self.X)
 
@@ -58,7 +59,8 @@ class ParameterOptimization:
         self._preprocess_features()
 
         self.splits = self._split_data()
-
+        self.df_trials = None #variable to store results from objective in hyperband method
+        
 
     def run_methods(self, ):
         """This function runs all hyperparameter tuning methods on the 5 folds and returns the results in a DataFrame."""
@@ -89,7 +91,7 @@ class ParameterOptimization:
                 trials_random_search = self.grid_search_method(
                     X_train_full=X_train_full, y_train_full=y_train_full, 
                     X_test=X_test, y_test=y_test, 
-                    num_try_random=135 
+                    num_try_random=1 #TODO: change back to 135
                 )
                 trials_tpe = self.tpe_method(
                     X_train_full=X_train_full, y_train_full=y_train_full,
@@ -124,6 +126,25 @@ class ParameterOptimization:
         final_results.rename(columns={"index": "iter"}, inplace=True)
         return final_results
 
+    def run_hyperband(self,):
+        for fold, (full_train_index, test_index) in enumerate(self.splits):
+            X_train_full, X_test = self.X.iloc[full_train_index], self.X.iloc[test_index]
+            y_train_full, y_test = self.y.iloc[full_train_index], self.y.iloc[test_index]
+            trials_hyperband = self.hyperband_method(X_train_full,y_train_full,X_test,y_test)
+            trials = eval('trials_hyperband')
+            trials['fold'] = fold
+            trials['method'] = 'hyperband'
+            #Rename all ParameterConfig Files
+            param_config_files = [f for f in os.listdir('Hyperband/ParameterConfigurations/') if f.startswith('param_config')]
+            for file in param_config_files:
+                os.rename(f'Hyperband/ParameterConfigurations/{file}', f'Hyperband/ParameterConfigurations/fold_{fold}_{file}')
+            if fold == 0:
+                final_results = trials
+            else:
+                final_results = pd.concat([final_results, trials])
+        final_results.reset_index(inplace=True)
+        final_results.rename(columns={"index": "iter"}, inplace=True)
+        return final_results
 
     def grid_search_method(self, X_train_full, y_train_full, X_test, y_test, num_try_random=None):
         """This function performs fixed/random grid search on the model."""
@@ -156,7 +177,7 @@ class ParameterOptimization:
             param_grid['max_depth'].append(-1)
             param_grid['num_leaves'] = [2**1, 2**2, 2**3, 2**5, 2**10]
         if self.try_num_iter:
-            param_grid['n_iter'] = [1,2,5,10,20,50,100,200,500,1000]    
+            param_grid['n_iter'] = [1,2,5,10,20,50]#,100,200,500,1000]    #TODO: change back to 1000
         # Perform hyperparameter tuning
         train_set = gpb.Dataset(X_train_full, label=y_train_full)
 
@@ -266,7 +287,7 @@ class ParameterOptimization:
             if self.try_max_depth:
                 param_grid['max_depth'] = trial.suggest_categorical('max_depth',[1,2,3,4,5,6,7,8,9,10])
             if self.try_num_iter:
-                param_grid['n_iter'] =trial.suggest_int('n_iter',1,1000)  
+                param_grid['n_iter'] =trial.suggest_int('n_iter',1,20) #TODO: change back to 1000  
             # Train the model
             #print('\n Here is the param_grid:',param_grid)
             score, best_iter = self._train_model_for_validation(
@@ -282,7 +303,7 @@ class ParameterOptimization:
             return score
 
         study = optuna.create_study(direction='minimize', sampler=optuna.samplers.TPESampler(seed=self.seed))
-        study.optimize(objective_opt, n_trials=135)
+        study.optimize(objective_opt, n_trials=10) #TODO: change back to 135
         
         df = study.trials_dataframe()
         #print('Column names of the dataframe returned by TPE:', df.columns)
@@ -345,7 +366,7 @@ class ParameterOptimization:
             space.append(Categorical(categories=[-1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], name='max_depth'))
             space.append(Integer(2, 1024, name='num_leaves'))
         if self.try_num_iter:
-            space.append(Integer(1,1000, name = 'n_iter')) 
+            space.append(Integer(1,20, name = 'n_iter')) #TODO: change back to 1000
 
 
         # Split the full training set into training and validation sets
@@ -373,7 +394,7 @@ class ParameterOptimization:
 
             return score
 
-        result = gp_minimize(objective_gp_bo, space, n_calls=135, random_state=self.seed) 
+        result = gp_minimize(objective_gp_bo, space, n_calls=10, random_state=self.seed)  #change back to 135
 
         # Restore the 'numpy' module to its original state
         delattr(np, 'int')
@@ -414,7 +435,99 @@ class ParameterOptimization:
         df_trials['joint_tuning_depth_leaves'] = self.joint_tuning_depth_leaves
         df_trials['try_num_iter'] = self.try_num_iter
         return df_trials # score, best_parameters, self.best_iter
-    
+    def hyperband_method(self,  X_train_full, y_train_full, X_test, y_test, R=50, factor=3):
+        self.min_score = float('inf')
+        
+        # Split the full training set into training and validation sets
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_train_full, y_train_full, test_size=self.val_size, random_state=self.fixed_seeds[2]
+        )
+        #print('This is X_train',X_train,'and X_val', X_val)
+        #init values for Hyperband
+        s_max = int(np.floor(np.log(R) / np.log(factor))) 
+        B = (s_max + 1)*R
+        s_values = np.arange(s_max, -1, -1)
+        
+        def objective_opt(trial):
+            n = int(np.ceil(B/R*factor**(s_values[trial.number])/(s_values[trial.number]+1)))
+            r = R*1/(factor**(s_values[trial.number]))
+            #initialize n parameter configurations
+            #print(f'This is n {n} and r {r}.')
+            param_config = {}
+            for i in range(n):
+                #Note different names are such that optuna samples n different parameters and not just one parameter config n-times!!!
+                param_grid = {
+                        'learning_rate': trial.suggest_float(f'learning_rate_{trial.number}_{i}', 0.001, 1),
+                        'min_data_in_leaf': trial.suggest_int(f'min_data_in_leaf_{trial.number}_{i}', 1, 1000),
+                        'lambda_l2': trial.suggest_float(f'lambda_l2_{trial.number}_{i}', 0, 100),
+                        'max_bin': trial.suggest_int(f'max_bin_{trial.number}_{i}', 255, self.max_bin_val),
+                        'bagging_fraction': trial.suggest_float(f'bagging_fraction_{trial.number}_{i}', 0.5, 1),
+                        'feature_fraction': trial.suggest_float(f'feature_fraction_{trial.number}_{i}', 0.5, 1)
+                    }
+                # Adjust the grid for the case where we tune the 'num_leaves' parameter
+                if self.try_num_leaves:
+                    param_grid['num_leaves'] = trial.suggest_int(f'num_leaves_{trial.number}_{i}', 2, 1024)
+                if self.joint_tuning_depth_leaves:
+                    param_grid['num_leaves'] = trial.suggest_int(f'num_leaves_{trial.number}_{i}', 2, 1024)
+                    param_grid['max_depth'] = trial.suggest_categorical(f'max_depth_{trial.number}_{i}',[-1,1,2,3,4,5,6,7,8,9,10])
+                if self.try_max_depth:
+                    param_grid['max_depth'] = trial.suggest_categorical(f'max_depth_{trial.number}_{i}',[1,2,3,4,5,6,7,8,9,10])
+                param_config[i] = param_grid
+            # Save the param_config dictionary as a CSV file
+            os.makedirs('Hyperband/ParameterConfigurations', exist_ok=True)
+            param_config_df = pd.DataFrame.from_dict(param_config, orient='index')
+            param_config_df.to_csv(f'Hyperband/ParameterConfigurations/param_config_{trial.number}.csv', index_label='param_ind')
+            for k in range(s_values[trial.number]+1):
+                n_k = np.floor(n*factor**(-k))
+                r_k = int(np.floor(r*factor**k))
+                #print(f'This is n_k {n_k} and r_k {r_k} for k {k}.')
+                scores = {}
+                best_iter = {}
+                for ind, param_grid in param_config.items():
+                    #print(f'Validate the following params {param_grid} using {r_k} num_boost rounds.')
+                    scores[ind], best_iter[ind] = self._train_model_for_validation(X_train, y_train, X_val, y_val, params = param_grid,num_boost_round=r_k)
+                if len(param_config) > 1 and int(np.floor(n_k/factor)) > 0:
+                    param_config, scores = truncate(param_config,scores, int(np.floor(n_k/factor)))
+                else: 
+                    break
+            #print(f'This are the s_values {s_values}')
+            #print(f'This is the param config {param_config} and the scores {scores}.')
+            if self.df_trials is None:
+                self.df_trials = pd.DataFrame.from_dict(param_config, orient='index')
+                #self.df_trials['s value'] = s_values[trial.number]
+                self.df_trials['val_score'] = scores.values()
+            else:
+                df_temp = pd.DataFrame.from_dict(param_config, orient='index')
+                #df_temp['s value'] = s_values[trial.number]
+                df_temp['val_score'] = scores.values()
+                self.df_trials = pd.concat([self.df_trials, df_temp])
+            best_ind = min(scores, key=scores.get)
+            self.best_iter = best_iter[best_ind]
+            return scores[best_ind]
+        study = optuna.create_study(direction='minimize', sampler=optuna.samplers.RandomSampler(seed=self.seed))
+        study.optimize(objective_opt, n_trials=s_max+1)
+        
+        #Copy self.df_trials to compute test scores
+        df_trials = self.df_trials
+        self.df_trials = None
+        #print(f'This is the best iteration {self.best_iter}')
+        #df_trials = df_trials.drop(columns=['s value'])
+        # Compute the test scores
+        df_trials = self._compute_test_scores(
+            X_train_full=X_train_full, y_train_full=y_train_full, X_test=X_test, y_test=y_test,
+            df=df_trials, best_iter=self.best_iter
+        )
+        ##add back s value 
+        #df_trials['s value'] = self.df_trials['s value']
+        #Reset self.df_trials
+        df_trials.reset_index(inplace=True)
+        df_trials.rename(columns={"index": "param_ind"}, inplace=True)
+        # Add the 'try_num_leaves', 'joint_tuning_depth_leaves and try_num_iter columns to the DataFrame
+        df_trials['try_num_leaves'] = self.try_num_leaves
+        df_trials['joint_tuning_depth_leaves'] = self.joint_tuning_depth_leaves
+        df_trials['try_num_iter'] = self.try_num_iter
+        return df_trials 
+
 
     def _generate_local_seeds(self):
         """This function generates the local seeds for the current task."""
@@ -602,7 +715,18 @@ class ParameterOptimization:
         elif not self.joint_tuning_depth_leaves:
             df['num_leaves'] = 2**10
         return df
-    
+    def _create_df(self,param_grid, param_ind, scores):
+        """This function creates a dataframe from the dictionary which are created in the 'hyperband' function."""
+        # Normalize the dictionary to ensure all parameters are present in each element
+        normalized_data = [{**_get_param_combination(ind,param_grid), 'val_score': scores[ind]} for ind in param_ind]
+
+        # Format the DataFrame
+        df = pd.DataFrame(normalized_data)
+        if self.try_num_leaves:
+            df['max_depth'] = -1
+        elif not self.joint_tuning_depth_leaves:
+            df['num_leaves'] = 2**10
+        return df
 
     def _modify_df_for_tpe(self, df):
         """This function modifies the DataFrame for the TPE method."""
@@ -664,3 +788,13 @@ class ParameterOptimization:
             all_combinations[param_comb_number] = {'params': param_comb, 'score': np.nan}
 
         return all_combinations
+    
+    def _generate_hyperband_combinations(self,param_grid,num_try_random=None):
+        grid_size, param_grid = modify(param_grid)
+        if num_try_random is not None:
+            if num_try_random > grid_size:
+                raise ValueError("num_try_random is larger than the number of all possible combinations of parameters in param_grid ")
+            
+            try_param_combs = np.random.RandomState(self.seed).choice(a=grid_size, size=num_try_random, replace=False)
+
+        return try_param_combs
