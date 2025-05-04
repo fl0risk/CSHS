@@ -510,8 +510,7 @@ class ParameterOptimization:
         #Copy self.df_trials to compute test scores
         df_trials = self.df_trials
         self.df_trials = None
-        #print(f'This is the best iteration {self.best_iter}')
-        #df_trials = df_trials.drop(columns=['s value'])
+        df_trials = self._modify_df_for_hyperband(df_trials)
         # Compute the test scores
         df_trials = self._compute_test_scores(
             X_train_full=X_train_full, y_train_full=y_train_full, X_test=X_test, y_test=y_test,
@@ -798,3 +797,15 @@ class ParameterOptimization:
             try_param_combs = np.random.RandomState(self.seed).choice(a=grid_size, size=num_try_random, replace=False)
 
         return try_param_combs
+    
+    def _modify_df_for_hyperband(self,df):
+        if self.try_num_leaves and not(self.try_num_iter):
+            df['max_depth'] = -1
+        elif self.try_max_depth and not(self.try_num_iter):
+            df['num_leaves'] = 2**10
+        elif self.try_num_iter and self.try_max_depth:
+            df['num_leaves'] = 2**10
+        elif self.try_num_iter and self.try_num_leaves:
+            df['max_depth'] = -1
+            
+        return df
