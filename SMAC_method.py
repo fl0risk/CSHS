@@ -7,7 +7,7 @@ import gpboost as gpb
 import numpy as np
 import optuna
 import smac
-from ConfigSpace import ConfigurationSpace, Integer, Float, Categorical, Constant
+from ConfigSpace import ConfigurationSpace, Integer, Categorical
 from smac.facade.hyperparameter_optimization_facade import HyperparameterOptimizationFacade as HPOFacade
 from smac import RunHistory, Scenario
 from functools import partial #used to equip _train_model_for_validation function with inputs
@@ -124,7 +124,6 @@ class ParameterOptimizationSMAC:
                 X_train, y_train, X_val, y_val, 
                 params
             )
-            #print('This is the score:',score)
             # Get the best number of iterations
             if score < self.min_score:
                 self.min_score = score
@@ -132,7 +131,7 @@ class ParameterOptimizationSMAC:
             
             return score
         
-        scenario = Scenario(param,deterministic=True, n_trials=10)#TODO check other_params adjust trials to 135
+        scenario = Scenario(param,deterministic=True, n_trials=135, seed = self.seed)#TODO check other_params adjust trials to 135
         smac = HPOFacade(scenario,objective_opt,overwrite=True)
         #incumbent = smac.optimize()
         _ = smac.optimize()
@@ -153,6 +152,9 @@ class ParameterOptimizationSMAC:
         df_trials['try_num_leaves'] = self.try_num_leaves
         df_trials['joint_tuning_depth_leaves'] = self.joint_tuning_depth_leaves
         df_trials['try_num_iter'] = self.try_num_iter
+        #reoder order of columns
+        #print('Here are the columns', df)
+        df_trials = df_trials[['learning_rate','min_data_in_leaf','max_depth','lambda_l2','num_leaves','max_bin',	'bagging_fraction','feature_fraction','val_score','test_score','test_log_loss','test_f1_score','test_rmse',	'current_best_test_score','current_best_test_log_loss',	'current_best_test_f1_score','current_best_test_rmse','try_num_leaves',	'joint_tuning_depth_leaves','try_num_iter']]
         return df_trials
 
     def _generate_local_seeds(self):
@@ -232,7 +234,7 @@ class ParameterOptimizationSMAC:
 
 
 
-    def _train_model_for_validation(self, X_train, y_train, X_val, y_val, params, num_boost_round: int = 1000) -> float:
+    def _train_model_for_validation(self, X_train, y_train, X_val, y_val, params, num_boost_round: int = 1000) -> float: #TODO: change back to 1000
         """This function performs the model training and evaluation and returns the prediction accuracy based on the validation set."""
         params_dict = params.get_dictionary()
         params_dict.update(self.other_params)

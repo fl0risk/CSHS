@@ -1,6 +1,6 @@
 import copy
 import numpy as np
-
+import pandas as pd
 from pandas import Series as pd_Series
 from pandas import DataFrame as pd_DataFrame
 from pandas.api.types import is_sparse as is_dtype_sparse
@@ -447,105 +447,123 @@ def modify(param_grid):
     return grid_size, param_grid
 
 
-
-# def run_then_return_val_score(param_comb,param_grid, train_set,num_boost_round, params=None, 
-#                                 gp_model=None,
-#                                 line_search_step_length=False,
-#                                 use_gp_model_for_validation=True, train_gp_model_cov_pars=True,
-#                                 folds=None, nfold=5, stratified=False, shuffle=True,
-#                                 metric=None, fobj=None, feval=None, init_model=None,
-#                                 feature_name='auto', categorical_feature='auto',
-#                                 early_stopping_rounds=None, fpreproc=None,
-#                                 verbose_eval=1, seed=0, callbacks=None):
-#     if verbose_eval < 2:
-#         verbose_eval_cv = False
-
-#     else:
-#         verbose_eval_cv = True
-
-#     best_score = 1e99
-#     current_score = 1e99
-#     best_params = {}
-#     best_num_boost_round = num_boost_round
-#     counter_num_comb = 1
-
-#     all_combinations = {}
-
-#     if 'max_bin' in param_comb:
-#         if train_set.handle is not None:
-#             raise ValueError("'train_set' cannot be constructed already when 'max_bin' is in 'param_grid' ")
-        
-#         else:
-#             train_set_not_constructed = copy.deepcopy(train_set)
-
-#     for param_comb_number in param_comb:
-#         param_comb = _get_param_combination(param_comb_number=param_comb_number, param_grid=param_grid)
-
-#         for param in param_comb:
-#             params[param] = param_comb[param]
-
-#         if verbose_eval >= 1:
-#             print("Trying parameter combination " + str(counter_num_comb) +
-#                   " of " + str(len(param_comb)) + ": " + str(param_comb))
-            
-#         if 'max_bin' in param_grid:
-#             train_set = copy.deepcopy(train_set_not_constructed)
-
-#         current_score_is_better = False
-
-#         try:
-#             cvbst = cv(params=params, train_set=train_set, num_boost_round=num_boost_round, gp_model=gp_model,
-#                        line_search_step_length=line_search_step_length,
-#                        use_gp_model_for_validation=use_gp_model_for_validation,
-#                        train_gp_model_cov_pars=train_gp_model_cov_pars,
-#                        folds=folds, nfold=nfold, stratified=stratified, shuffle=shuffle,
-#                        metric=metric, fobj=fobj, feval=feval, init_model=init_model,
-#                        feature_name=feature_name, categorical_feature=categorical_feature,
-#                        early_stopping_rounds=early_stopping_rounds, fpreproc=fpreproc,
-#                        verbose_eval=verbose_eval_cv, seed=seed, callbacks=callbacks,
-#                        eval_train_metric=False, return_cvbooster=False)
-            
-
-#             current_score = np.min(cvbst[next(iter(cvbst))])
-#             if current_score < best_score:
-#                 current_score_is_better = True
-
-#         except Exception as err: # Note: this is typically not called anymore since gpv.cv() now already contains a tryCatch statement
-#             if verbose_eval < 1:
-#                 print("Error for parameter combination " + str(counter_num_comb) +
-#                       " of " + str(len(param_comb)) + ": " + str(param_comb))
-                
-#         all_combinations[param_comb_number] = {'params': param_comb, 'score': current_score}
-
-#         if current_score_is_better:
-#             best_score = current_score
-#             best_params = param_comb
+def tune_pars_TPE_algorithm_optuna(search_space, n_trials, X, y, gp_model = None,
+                                max_num_boost_round=1000, early_stopping_rounds=None,
+                                metric=None, folds=None, nfold=5,
+                                cv_seed=0, tpe_seed=0,
+                                params=None, verbose_train=0, verbose_eval=1,
+                                use_gp_model_for_validation=True, train_gp_model_cov_pars=True, feval=None,
+                                categorical_feature='auto'):
+    """Function for choosing tuning parameters using the TPE (Tree-structured Parzen Estimator) algorithm implemented in optuna"""
+    if not isinstance(search_space, dict):
+        raise ValueError("'search_space' must be a dictionary")
+    if not isinstance(n_trials, int) or n_trials <= 0:
+        raise ValueError("'n_trials' must be a positive integer")
     
-#             best_num_boost_round = np.argmin(cvbst[next(iter(cvbst))]) + 1
+    if params is None:
+        params = {}
+    else:
+        params = copy.deepcopy(params)
+    search_space = copy.deepcopy(search_space)
+    metric_higher_better = False
+    if metric is not None:
+        if isinstance(metric, str):
+            metric = [metric]
+        if metric[0].startswith(('auc', 'ndcg@', 'map@', 'average_precision')):
+            metric_higher_better = True
+    elif feval is not None:
+        if callable(feval):
+            feval = [feval]
+        PH1, PH2, metric_higher_better = feval[0](np.array([0]), Dataset(np.array([0]), np.array([0])))
+    best_score = -1e99 if metric_higher_better else 1e99
+    best_iter = -1
+    verbose_eval_cv = verbose_eval >= 2
 
-#             if verbose_eval >= 1:
-#                 metric_name = list(cvbst.keys())[0]
-#                 metric_name = metric_name.split('-mean', 1)[0]
-#                 print("***** New best test score ("+metric_name+" = " + str(best_score) +
-#                       ") found for the following parameter combination:")
-#                 best_params_print = copy.deepcopy(best_params)
-#                 best_params_print['num_boost_round'] = best_num_boost_round
-#                 print(best_params_print)
+    def objective_opt(trial):
+        nonlocal best_score, best_iter
+        """Objective function for tuning parameter search with Optuna."""
+        # Parse parameters
+        params_loc = {}
+        for param in search_space:
+            if len(search_space[param]) != 2:
+                raise ValueError(f"search_space['{param}'] must have length 2")
+            if param in ['learning_rate', 'shrinkage_rate',
+                         'min_gain_to_split', 'min_split_gain',
+                         'min_sum_hessian_in_leaf', 'min_sum_hessian_per_leaf', 'min_sum_hessian', 'min_hessian', 'min_child_weight']:
+                params_loc[param] = trial.suggest_float(param, search_space[param][0], search_space[param][1], log=True)
+            elif param in ['lambda_l2', 'reg_lambda', 'lambda',
+                           'lambda_l1', 'reg_alpha',
+                           'bagging_fraction', 'sub_row', 'subsample', 'bagging',
+                           'feature_fraction', 'sub_feature', 'colsample_bytree',
+                           'cat_l2',
+                           'cat_smooth']:
+                params_loc[param] = trial.suggest_float(param, search_space[param][0], search_space[param][1], log=False)
+            elif param in ['num_leaves', 'num_leaf', 'max_leaves', 'max_leaf',
+                           'min_data_in_leaf', 'min_data_per_leaf', 'min_data', 'min_child_samples',
+                           'max_bin']:
+                params_loc[param] = trial.suggest_int(param, search_space[param][0], search_space[param][1], log=True)
+            elif param in ['max_depth']:
+                params_loc[param] = trial.suggest_int(param, search_space[param][0], search_space[param][1], log=False)
+            elif param in ['line_search_step_length']:
+                params_loc[param] = trial.suggest_categorical(param, [search_space[param][0], search_space[param][1]])
+            else: 
+                raise ValueError(f"Unknown parameter '{param}'")
+        params_loc.update({'verbose': verbose_train})
+        params_loc.update(params)
 
-#         counter_num_comb = counter_num_comb + 1
+        # Train the model
+        data_bst = Dataset(data=X, label=y)
+        cvbst = cv(params=params_loc, train_set=data_bst, gp_model=gp_model, 
+                   use_gp_model_for_validation=use_gp_model_for_validation,  
+                   train_gp_model_cov_pars=train_gp_model_cov_pars,
+                   num_boost_round=max_num_boost_round, 
+                   early_stopping_rounds=early_stopping_rounds,
+                   folds=folds, nfold=nfold, verbose_eval=verbose_eval_cv, show_stdv=False, 
+                   seed=cv_seed, metric=metric, feval=feval,
+                   categorical_feature=categorical_feature)
+        if trial.should_prune():
+            raise optuna.TrialPruned()
+        metric_name = list(cvbst.keys())[0]
+        best_score_trial = np.min(cvbst[metric_name])
+        best_iter_trial = np.argmin(cvbst[metric_name]) + 1
+        if metric_higher_better:
+            best_score_trial = np.max(cvbst[metric_name])
+            best_iter_trial = np.argmax(cvbst[metric_name]) + 1
 
-#     return {'best_params': best_params, 'best_iter': best_num_boost_round, 'best_score': best_score, 'all_combinations': all_combinations}
+        # Save the best number of iterations
+        found_better_combination = False
+        if metric_higher_better:
+            if best_score_trial > best_score:
+                found_better_combination = True
+        else:
+            if best_score_trial < best_score:
+                found_better_combination = True
+        if found_better_combination:
+            best_score = best_score_trial
+            best_iter = best_iter_trial
+
+        return best_score_trial
+    
+    direction = 'maximize' if metric_higher_better else 'minimize'
+    study = optuna.create_study(direction=direction, sampler=optuna.samplers.TPESampler(seed=tpe_seed),pruner=optuna.pruners.HyperbandPruner(
+        min_resource=10, max_resource=max_num_boost_round, reduction_factor=3
+    ))
+    study.optimize(objective_opt, n_trials=n_trials)
+    return {'best_params': study.best_trial.params, 'best_iter': best_iter, 'best_score': study.best_trial.values}
+
+def truncate(param_config,scores,k):
+    '''Function that takes a set of param combinations and their corresponding scores
+    and returns the top k performing combinations'''
+    sorted_ind = sorted(scores.items(), key = lambda item: item[1])[:k]
+    param_config= {param_ind: param_config[param_ind] for param_ind, _ in sorted_ind}
+    scores= {param_ind: scores[param_ind] for param_ind, _ in sorted_ind}
+    return param_config, scores
 
 
 
-
-
-# # def truncate(param, scores,k):
-# #     '''Function that takes a set of param combinations and their corresponding scores
-# #     and returns the top k performing combinations'''
-# #     sorted_params = sorted(scores.items(), key=lambda x: x[1])[:k]
-# #     param = [param_comb for param_comb, _ in sorted_params]
-# #     scores = [param_comb for param_comb, _ in sorted_params]
-# #     return param, scores
-# # def get_hyperparameter_configuration(n,search_space):
-# #     return 0
+def runhistory_to_dataframe(run_history):
+    rows = []
+    for config in run_history.get_all_configs():
+        row = {param.name: param for param in config.values()}
+        rows.append(row)
+    return pd.DataFrame(rows)
