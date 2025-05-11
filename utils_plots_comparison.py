@@ -6,7 +6,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import seaborn as sns
-from matplotlib.table import Table
 
 
 
@@ -14,9 +13,9 @@ seeds = [27225, 34326,92161, 99246, 108473, 117739,  235053, 257787,
         89389, 443417, 572858, 620176, 671487, 710570, 773246, 936518,32244,147316, 777646, 778572]
 
 NUM_SEEDS = len(seeds)
-NUM_TASKS = 59 #can be removed after testing
-NUM_REGR_TASKS = 36 #can be removed after testing
-NUM_CLASS_TASKS = 23 #can be removed after testing
+NUM_TASKS = 59
+NUM_REGR_TASKS = 36
+NUM_CLASS_TASKS = 23
 NUM_ITERS = 135
 METHODS = ['grid_search', 'random_search', 'tpe', 'gp_bo']
 METHODS_JOINT = ['random_search', 'tpe', 'gp_bo']
@@ -73,8 +72,8 @@ def create_scores_dict(classification=False, rmse=False):
                     try_joint = data.loc[data['joint_tuning_depth_leaves'] == True, 'current_best_test_rmse'].reset_index(drop=True)
                     df = pd.DataFrame({'try_max_depth_rmse': try_max_depth, 'try_num_leaves_rmse': try_num_leaves})
                     df_joint = pd.DataFrame({'try_joint_rmse': try_joint})
-                    df['method'] = data.loc[0:data.shape[0]-1, 'method']
-                    df['fold'] = data.loc[0:data.shape[0]-1, 'fold']
+                    df['method'] = data.loc[0:df.shape[0]-1, 'method']
+                    df['fold'] = data.loc[0:df.shape[0]-1, 'fold']
                     df_joint['method'] = data.loc[(data['method']!= 'grid_search'), 'method'].reset_index(drop=True)
                     df_joint['fold'] = data.loc[(data['method']!= 'grid_search'), 'fold'].reset_index(drop=True)
                     for i, method in enumerate(METHODS):
@@ -90,8 +89,8 @@ def create_scores_dict(classification=False, rmse=False):
                     try_joint = data.loc[data['joint_tuning_depth_leaves'] == True, 'current_best_test_score'].reset_index(drop=True)
                     df = pd.DataFrame({'try_max_depth_score': try_max_depth, 'try_num_leaves_score': try_num_leaves})
                     df_joint = pd.DataFrame({'try_joint_score': try_joint})
-                    df['method'] = data.loc[0:data.shape[0]-1, 'method']
-                    df['fold'] = data.loc[0:data.shape[0]-1, 'fold']
+                    df['method'] = data.loc[0:df.shape[0]-1, 'method']
+                    df['fold'] = data.loc[0:df.shape[0]-1, 'fold']
                     df_joint['method'] = data.loc[(data['method']!= 'grid_search'), 'method'].reset_index(drop=True)
                     df_joint['fold'] = data.loc[(data['method']!= 'grid_search'), 'fold'].reset_index(drop=True)                    
                     for i, method in enumerate(METHODS):
@@ -110,7 +109,52 @@ def create_scores_dict(classification=False, rmse=False):
         aggregated_scores_MD = aggregated_scores_MD.clip(0,1)
         aggregated_scores_J = aggregated_scores_J.clip(0,1)
     return aggregated_scores_NL, aggregated_scores_MD, aggregated_scores_J, names
+def create_scores_dict_joint_tuning(classification=False, rmse=False):
+    if classification:
+        NUM_TASKS = NUM_CLASS_TASKS
+        suites = [334, 337]
+    
+    else:
+        NUM_TASKS = NUM_REGR_TASKS
+        suites = [335, 336] 
 
+    scores_J = np.zeros((NUM_METHODS_JOINT, NUM_ITERS, NUM_TASKS, NUM_SEEDS, NUM_FOLDS))
+    k = 0
+    names = []
+    
+    for suite_id in suites:
+        with open(f"task_indices/{suite_id}_task_names.json", 'r') as f:
+            _names = json.load(f)
+        names.extend(_names)
+
+        tasks = np.load(f"task_indices/{suite_id}_task_indices.npy")
+
+        for task_id in tasks:
+            for l, seed in enumerate(seeds):
+                #print('Seed',seed, 'Suite_id', suite_id, 'Task_id', task_id)
+                data = pd.read_csv(f"/Users/floris/Desktop/ETH/ETH_FS25/Semesterarbeit/Result_Task_2/seed_{seed}/{suite_id}_{task_id}.csv")
+                #data['current_best_test_score'] = data['current_best_test_score'].clip(0, 1)
+                if rmse:
+                    try_joint = data.loc[data['joint_tuning_depth_leaves'] == True, 'current_best_test_rmse'].reset_index(drop=True)
+                    df_joint = pd.DataFrame({'try_joint_rmse': try_joint})
+                    df_joint['method'] = data.loc[(data['method']!= 'grid_search'), 'method'].reset_index(drop=True)
+                    df_joint['fold'] = data.loc[(data['method']!= 'grid_search'), 'fold'].reset_index(drop=True)
+                    for i, method in enumerate(METHODS_JOINT):
+                        for m in FOLDS:
+                            scores_J[i, :, k, l, m] = df_joint.loc[(df_joint['method'] == method) & (df_joint['fold'] == m), 'try_joint_rmse'].values
+                else:
+                    try_joint = data.loc[data['joint_tuning_depth_leaves'] == True, 'current_best_test_score'].reset_index(drop=True)
+                    df_joint = pd.DataFrame({'try_joint_score': try_joint})
+                    df_joint['method'] = data.loc[(data['method']!= 'grid_search'), 'method'].reset_index(drop=True)
+                    df_joint['fold'] = data.loc[(data['method']!= 'grid_search'), 'fold'].reset_index(drop=True)                                    
+                    for i, method in enumerate(METHODS_JOINT):
+                        for m in FOLDS:
+                            scores_J[i, :, k, l, m] = df_joint.loc[(df_joint['method'] == method) & (df_joint['fold'] == m), 'try_joint_score'].values
+            k += 1
+    aggregated_scores_J = np.mean(scores_J, axis=-1) #take mean over folds
+    if not rmse :
+        aggregated_scores_J = aggregated_scores_J.clip(0,1)
+    return aggregated_scores_J, names
 def normalize_scores(scores, adtm=False):
     if adtm: 
         max = np.max(scores, axis=(0, 1, 3)) #gets maximum for each task
@@ -432,6 +476,7 @@ def aggregated_tasks(scores,METHOD,confidence_interval=False):
     
     for j in range(len(scores)): #scores = [scores_reg, scores_class, RMSE]
         for i in range(len(NAME_TUNING)):
+            #norm_scores[j][i] = normalize_scores(scores[j][i],  False)
             if i==0 or i ==1:
                 norm_scores[j][i] = normalize_scores(scores[j][i][1:,:,:,:], False if j==2 else True)
             else:
@@ -463,7 +508,7 @@ def aggregated_tasks(scores,METHOD,confidence_interval=False):
                     )
                     #print(i,j, NAME_TUNING[i])
                     if randomness == 1:  # Randomness due to the seeds
-                        mean_tasks[j][i] = np.mean(norm_scores[j][i], axis=2)
+                        mean_tasks[j][i] = np.mean(norm_scores[j][i], axis=1)
                         avg_var_across_tasks[j][i] = np.std(mean_tasks[j][i], axis=-1)
 
                         ax.fill_between(
@@ -621,7 +666,7 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
     std_norm_scores = [np.zeros((NUM_ITERS)) for _ in range(len(NAME_TUNING))]
     lower_lim = [np.zeros((NUM_ITERS)) for _ in range(len(NAME_TUNING))]
     upper_lim =  [np.zeros((NUM_ITERS)) for _ in range(len(NAME_TUNING))]
-    mean_seeds = [np.zeros((NUM_ITERS,NUM_TASKS)) for _ in range(len(NAME_TUNING))] 
+    mean_seeds = [np.zeros((NUM_ITERS,num_tasks)) for _ in range(len(NAME_TUNING))] 
     mean_tasks = [np.zeros((NUM_ITERS,NUM_SEEDS)) for _ in range(len(NAME_TUNING))] 
     avg_var_across_tasks = [np.zeros((NUM_METHODS,NUM_ITERS)) for _ in range(len(NAME_TUNING))]
     avg_var_across_seeds = [np.zeros((NUM_METHODS,NUM_ITERS)) for _ in range(len(NAME_TUNING))]
@@ -795,11 +840,19 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
     lines, labels = axes[0].get_legend_handles_labels()
     fig.legend(lines, labels, loc='lower center', ncol=len(NAME_METHODS_JOINT), fontsize=16, bbox_to_anchor=(0.5, -0.025)) if classification else fig.legend(lines, labels, loc='lower center', ncol=len(METHODS), fontsize=16, bbox_to_anchor=(0.5, -0.025))
     bigtitle = 'Comparison of Methods'
+    if RMSE:
+        bigtitle += ' using RMSE'
+    if classification:
+        bigtitle += ' for Classification Tasks'
     if confidence_interval:
         bigtitle += ' with Confindence Interval'
     plt.suptitle(bigtitle, fontsize=30, y=1.001)
     plt.tight_layout()
     file = 'compare_methods'
+    if RMSE:
+        file += '_RMSE'
+    if classification:
+        file += '_classficiation'
     if confidence_interval:
         file += '_confindence_interval'
     plt.savefig(f'plots/{file}.png', bbox_inches='tight')
