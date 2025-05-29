@@ -121,21 +121,36 @@ def create_scores_dict(classification=False, rmse=False):
     return aggregated_scores_NL, aggregated_scores_MD, aggregated_scores_J, names
 
 def normalize_scores(scores, adtm=False):
+    norm_scores = []
+    max = float('-inf')
     if adtm: 
-        scores_max = [np.max(s, axis=(0, 2)) for s in scores] #get maximum across task for each method
-        max = np.maximum.reduce(scores_max) #gets elementwise maximum along all methods
-        #max = np.max(scores, axis=(0, 1, 3)) #gets maximum for each task
-        scores_min = [np.percentile(s, 10, axis=(0, 2)) for s in scores]
-        min = np.minimum.reduce(scores_min)
-        norm_scores = [(s - min[np.newaxis, :, np.newaxis]) / (max[np.newaxis, :, np.newaxis] - min[np.newaxis, :, np.newaxis]) for s in scores]
-        norm_scores = [np.clip(s, 0, 1) for s in norm_scores]
+        for i in range(NUM_TUNING_STRAT):
+            scores_max = [np.max(s, axis=(0, 2)) for s in scores[i]] #get maximum across task for each method
+            temp_max = np.maximum.reduce(scores_max)
+            max = np.maximum(temp_max,max)
+        for i in range(NUM_TUNING_STRAT):
+            for j in range(NUM_METHODS):
+                if i != 0 and j!=0:
+                    all_scores = np.concatenate((all_scores, scores[i][j]),axis = 0)
+                else:
+                    all_scores = scores[i][j]
+        min = np.percentile(all_scores, q=10, axis=(0,2))    
+            
+        for i in range(NUM_TUNING_STRAT):            
+            norm_scores.append([(s - min[np.newaxis, :, np.newaxis]) / (max[np.newaxis, :, np.newaxis] - min[np.newaxis, :, np.newaxis]) for s in scores[i]])
+            norm_scores[i] = [np.clip(s, 0, 1) for s in norm_scores[i]]
 
     else:
-        scores_mean = [np.mean(s, axis=(0, 2)) for s in scores]
-        mean_for_norm = np.mean(scores_mean, axis = 0)
-        scores_std = [np.std(s, axis=(0, 2)) for s in scores]
-        std_for_norm = np.mean(scores_std, axis = 0)
-        norm_scores = [(s - mean_for_norm[np.newaxis, :, np.newaxis]) / std_for_norm[np.newaxis, :, np.newaxis] for s in scores]
+        for i in range(NUM_TUNING_STRAT):
+            for j in range(NUM_METHODS):
+                if i != 0 and j!=0:
+                    all_scores = np.concatenate((all_scores, scores[i][j]),axis = 0)
+                else:
+                    all_scores = scores[i][j]
+        mean_for_norm = np.mean(all_scores, axis = (0,2))
+        std_for_norm = np.std(all_scores, axis = (0,2))
+        for i in range(NUM_TUNING_STRAT):
+            norm_scores.append([(s - mean_for_norm[np.newaxis, :, np.newaxis]) / std_for_norm[np.newaxis, :, np.newaxis] for s in scores[i]])
 
     return norm_scores
 
@@ -155,9 +170,8 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
     avg_var_across_tasks = []
     avg_var_across_seeds = []
     
-    
+    norm_scores= normalize_scores(scores,not RMSE)
     for i in range(NUM_TUNING_STRAT):
-        norm_scores.append(normalize_scores(scores[i],  not RMSE))
         mean_norm_scores.append([np.mean(norm_scores_method, axis=(1,2)) for norm_scores_method in norm_scores[i]])
 
         std_norm_scores.append([np.std(norm_scores_method, axis=(1,2)) for norm_scores_method in norm_scores[i]])
@@ -382,7 +396,7 @@ def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classificatio
     upper_lim  = np.zeros((NUM_TUNING_STRAT,num_iters)) 
   
     for i in range(NUM_TUNING_STRAT):
-        norm_scores[i,:,:,:] = normalize_scores(scores[i], adtm)[method_index]
+        norm_scores[i,:,:,:] = normalize_scores(scores, adtm)[i][method_index]
         mean_norm_scores[i,:] = np.mean(norm_scores[i,:,:,:], axis=(1,2))
         print(np.std(norm_scores[i,:,:,:], axis=(1,2)).shape)
         std_norm_scores[i,:] = np.std(norm_scores[i,:,:,:], axis=(1,2))
