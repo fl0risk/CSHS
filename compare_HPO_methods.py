@@ -19,11 +19,16 @@ NUM_CLASS_TASKS = 23
 NUM_ITERS = 135
 NUM_ITERS_H = -1
 
+HPO_METHODS_SUBS = ['random_search', 'tpe', 'gp_bo']
 HPO_METHODS = ['random_search', 'tpe', 'gp_bo','hyperband', 'SMAC']
-HPO_METHODS_NAMES = ['Random Grid Search', 'TPE', 'GP-Boost','Hyperband', 'SMAC']
+HPO_METHODS_NAMES = ['Random Grid Search', 'TPE', 'GP-BO','Hyperband', 'SMAC']
+HPO_METHODS_SUBS_NAMES = ['Random Grid Search', 'TPE', 'GP-BO']
 TUNING_STRAT = ['Num Leaves','Max Depth','Joint']
+TUNING_STRAT_TASK2 = ['Num Leaves','Max Depth','Joint','Num Iter']
 NUM_TUNING_STRAT = len(TUNING_STRAT)
+NUM_TUNING_STRAT_TASK2 = len(TUNING_STRAT_TASK2)
 NUM_METHODS = len(HPO_METHODS)
+NUM_METHODS_SUBS = len(HPO_METHODS_SUBS)
 RANDOMNESS = ['both','seeds','tasks']
 FOLDS = [0, 1, 2, 3, 4]
 NUM_FOLDS = len(FOLDS)
@@ -54,9 +59,8 @@ def create_scores_dict(classification=False, rmse=False):
         print('The following shape for',i, scores_NL[i].shape)
     scores_MD = [np.zeros((NUM_ITERS, NUM_TASKS, NUM_SEEDS, NUM_FOLDS)) if HPO_METHODS[i] != 'hyperband' else np.zeros((NUM_ITERS_H, NUM_TASKS, NUM_SEEDS, NUM_FOLDS)) for i in range(NUM_METHODS)]
     scores_J = [np.zeros((NUM_ITERS, NUM_TASKS, NUM_SEEDS, NUM_FOLDS)) if HPO_METHODS[i] != 'hyperband' else np.zeros((NUM_ITERS_H, NUM_TASKS, NUM_SEEDS, NUM_FOLDS)) for i in range(NUM_METHODS)]
-    k = 0
     names = []
-    
+    k=0
     for suite_id in suites:
         with open(f"task_indices/{suite_id}_task_names.json", 'r') as f:
             _names = json.load(f)
@@ -113,49 +117,60 @@ def create_scores_dict(classification=False, rmse=False):
         aggregated_scores_NL.append(np.mean(scores_NL[i], axis=-1)) #take mean over folds
         aggregated_scores_MD.append(np.mean(scores_MD[i], axis=-1)) #take mean over folds
         aggregated_scores_J.append(np.mean(scores_J[i], axis=-1)) #take mean over folds
-    if not rmse :
-        for i in range(NUM_METHODS):
-            aggregated_scores_NL[i] = aggregated_scores_NL[i].clip(0, 1)
-            aggregated_scores_MD[i] = aggregated_scores_MD[i].clip(0, 1)
-            aggregated_scores_J[i] = aggregated_scores_J[i].clip(0, 1)
     return aggregated_scores_NL, aggregated_scores_MD, aggregated_scores_J, names
 
-def normalize_scores(scores, adtm=False):
+def normalize_scores(scores, adtm=False, task_2 = False):
+    if task_2:
+        num_methods = NUM_METHODS_SUBS
+        num_tuning_strat = NUM_TUNING_STRAT_TASK2
+    else:
+        num_methods = NUM_METHODS
+        num_tuning_strat = NUM_TUNING_STRAT
     norm_scores = []
     max = float('-inf')
     if adtm: 
-        for i in range(NUM_TUNING_STRAT):
-            scores_max = [np.max(s, axis=(0, 2)) for s in scores[i]] #get maximum across task for each method
+        for i in range(num_tuning_strat):
+            scores_max = [np.max(s, axis=(0, 2)) for s in scores[i]] #get maximum across task for each method, 0-axis iterations and 2-axis seeds 
             temp_max = np.maximum.reduce(scores_max)
             max = np.maximum(temp_max,max)
-        for i in range(NUM_TUNING_STRAT):
-            for j in range(NUM_METHODS):
+        for i in range(num_tuning_strat):
+            for j in range(num_methods):
                 if i != 0 and j!=0:
                     all_scores = np.concatenate((all_scores, scores[i][j]),axis = 0)
                 else:
                     all_scores = scores[i][j]
         min = np.percentile(all_scores, q=10, axis=(0,2))    
             
-        for i in range(NUM_TUNING_STRAT):            
+        for i in range(num_tuning_strat):            
             norm_scores.append([(s - min[np.newaxis, :, np.newaxis]) / (max[np.newaxis, :, np.newaxis] - min[np.newaxis, :, np.newaxis]) for s in scores[i]])
-            norm_scores[i] = [np.clip(s, 0, 1) for s in norm_scores[i]]
+            #norm_scores[i] = [np.clip(s, 0, 1) for s in norm_scores[i]]
 
     else:
-        for i in range(NUM_TUNING_STRAT):
-            for j in range(NUM_METHODS):
+        for i in range(num_tuning_strat):
+            for j in range(num_methods):
                 if i != 0 and j!=0:
                     all_scores = np.concatenate((all_scores, scores[i][j]),axis = 0)
                 else:
                     all_scores = scores[i][j]
         mean_for_norm = np.mean(all_scores, axis = (0,2))
         std_for_norm = np.std(all_scores, axis = (0,2))
-        for i in range(NUM_TUNING_STRAT):
+        for i in range(num_tuning_strat):
             norm_scores.append([(s - mean_for_norm[np.newaxis, :, np.newaxis]) / std_for_norm[np.newaxis, :, np.newaxis] for s in scores[i]])
 
     return norm_scores
 
-def compare_method(scores,classification = False, RMSE = False, confidence_interval = False):
+def compare_method(scores,classification = False, RMSE = False, confidence_interval = False, task2 = False):
     'Scores need to be of the form [NL, MD, JOINT]'
+    if task2:
+        num_methods = NUM_METHODS_SUBS
+        num_tuning_strat = NUM_TUNING_STRAT_TASK2
+        method_names = HPO_METHODS_SUBS_NAMES 
+        method_names = HPO_METHODS_SUBS
+    else:
+        num_methods = NUM_METHODS
+        num_tuning_strat = NUM_TUNING_STRAT
+        method_names = HPO_METHODS_NAMES
+        methods = HPO_METHODS 
     if classification and RMSE:
         ValueError('Classification and RMSE not possible')
     palette = set_plot_theme()
@@ -170,52 +185,53 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
     avg_var_across_tasks = []
     avg_var_across_seeds = []
     
-    norm_scores= normalize_scores(scores,not RMSE)
-    for i in range(NUM_TUNING_STRAT):
-        mean_norm_scores.append([np.mean(norm_scores_method, axis=(1,2)) for norm_scores_method in norm_scores[i]])
-
+    norm_scores= normalize_scores(scores,not RMSE,task2)
+    for i in range(num_tuning_strat):
+        if RMSE:
+            mean_norm_scores.append([np.mean(norm_scores_method, axis=(1,2)) for norm_scores_method in norm_scores[i]])
+        else:
+            mean_norm_scores.append([np.mean(norm_scores_method, axis=(1,2)) for norm_scores_method in norm_scores[i]])
         std_norm_scores.append([np.std(norm_scores_method, axis=(1,2)) for norm_scores_method in norm_scores[i]])
         if confidence_interval:
             lower_lim.append([np.percentile(norm_scores_method, 5, axis=(1,2))for norm_scores_method in norm_scores[i]])
             upper_lim.append([np.percentile(norm_scores_method, 95, axis=(1,2))for norm_scores_method in norm_scores[i]])
     
-    
-    fig, axes = plt.subplots(3, 3, figsize=(20, 15))
+    fig, axes = plt.subplots(len(RANDOMNESS),num_tuning_strat, figsize=(20,num_tuning_strat*5))
     axes = axes.flatten()
-    NUM_ITERS_H = norm_scores[0][HPO_METHODS.index('hyperband')].shape[0]
+    if not task2:
+        NUM_ITERS_H = norm_scores[0][HPO_METHODS.index('hyperband')].shape[0]
     for randomness in range(len(RANDOMNESS)):
-        for i in range(NUM_TUNING_STRAT):
-                ax = axes[randomness * 3 + i]  # Select the appropriate subplot
-                for method_ind in range(NUM_METHODS):
+        for i in range(num_tuning_strat):
+                ax = axes[randomness * (3+task2) + i]  # Select the appropriate subplot
+                for method_ind in range(num_methods):
                     #make a case distinction because there are only NUM_ITERS_H datapoints for Hyperband
-                    if HPO_METHODS[method_ind] != 'hyperband':
+                    if task2 or methods[method_ind] != 'hyperband':
                         iterations = np.arange(NUM_ITERS)
-                    else:
+                    elif methods[method_ind] == 'hyperband':
                         iterations = np.linspace(0,NUM_ITERS-1,NUM_ITERS_H)
                     ax.plot(
                         iterations,
-                        mean_norm_scores[i][method_ind],
+                        np.clip(mean_norm_scores[i][method_ind],-1 if RMSE else 0,1),
                         color=palette[method_ind],
                         marker=MARKERS[method_ind],
-                        label=HPO_METHODS_NAMES[method_ind],
+                        label=method_names[method_ind],
                         markersize=14,
                         linewidth=2.5,
                         markevery=15
                     )
                     if randomness == 1:  # Randomness due to the seeds
-                        mean_tasks.append([np.mean(norm_scores_method, axis=1) for norm_scores_method in norm_scores[i]])
-                        avg_var_across_tasks.append([np.std(mean_t, axis=-1) for mean_t in mean_tasks[i]])
-
+                        mean_tasks = np.mean(norm_scores[i][method_ind], axis=1)
+                        avg_var_across_tasks = np.std(mean_tasks, axis = -1)
                         ax.fill_between(
                             iterations,
-                            mean_norm_scores[i][method_ind] - avg_var_across_tasks[i][method_ind],
-                            mean_norm_scores[i][method_ind] + avg_var_across_tasks[i][method_ind],
+                            np.clip(mean_norm_scores[i][method_ind] - avg_var_across_tasks,-1 if RMSE else 0,1),
+                            np.clip(mean_norm_scores[i][method_ind] + avg_var_across_tasks,-1 if RMSE else 0,1),
                             alpha=0.2,
                             color=palette[method_ind]
                         )
                         ax.plot(
                             iterations,
-                            mean_norm_scores[i][method_ind] - avg_var_across_tasks[i][method_ind],
+                            np.clip(mean_norm_scores[i][method_ind] - avg_var_across_tasks,-1 if RMSE else 0,1),
                             linestyle='--',
                             color=palette[method_ind],
                             alpha=0.6,
@@ -223,7 +239,7 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
                         )
                         ax.plot(
                             iterations,
-                            mean_norm_scores[i][method_ind] + avg_var_across_tasks[i][method_ind],
+                            np.clip(mean_norm_scores[i][method_ind] + avg_var_across_tasks,-1 if RMSE else 0,1),
                             linestyle='--',
                             color=palette[method_ind],
                             alpha=0.6,
@@ -231,19 +247,19 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
                         )
 
                     elif randomness == 2:  # Randomness due to the tasks
-                        mean_seeds.append([np.mean(norm_scores_method, axis=-1) for norm_scores_method in norm_scores[i]])
-                        avg_var_across_seeds.append([np.std(mean_t, axis=-1) for mean_t in mean_tasks[i]])
+                        mean_seeds = np.mean(norm_scores[i][method_ind], axis=-1)
+                        avg_var_across_seeds = np.std(mean_seeds, axis = -1)
 
                         ax.fill_between(
                             iterations,
-                            mean_norm_scores[i][method_ind] - avg_var_across_seeds[i][method_ind],
-                            mean_norm_scores[i][method_ind] + avg_var_across_seeds[i][method_ind],
+                            np.clip(mean_norm_scores[i][method_ind] - avg_var_across_seeds,-1 if RMSE else 0,1),
+                            np.clip(mean_norm_scores[i][method_ind] + avg_var_across_seeds,-1 if RMSE else 0,1),
                             alpha=0.2,
                             color=palette[method_ind]
                         )
                         ax.plot(
                             iterations,
-                            mean_norm_scores[i][method_ind] - avg_var_across_seeds[i][method_ind],
+                            np.clip(mean_norm_scores[i][method_ind] - avg_var_across_seeds,-1 if RMSE else 0,1),
                             linestyle='--',
                             color=palette[method_ind],
                             alpha=0.6,
@@ -251,13 +267,12 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
                         )
                         ax.plot(
                             iterations,
-                            mean_norm_scores[i][method_ind] + avg_var_across_seeds[i][method_ind],
+                            np.clip(mean_norm_scores[i][method_ind] + avg_var_across_seeds,-1 if RMSE else 0,1),
                             linestyle='--',
                             color=palette[method_ind],
                             alpha=0.6,
                             linewidth=2.5
                         )
-
                     else:
                         if confidence_interval:
                             ax.fill_between(
@@ -287,14 +302,14 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
                         else:
                             ax.fill_between(
                                 iterations,
-                                mean_norm_scores[i][method_ind] - std_norm_scores[i][method_ind],
-                                mean_norm_scores[i][method_ind] + std_norm_scores[i][method_ind],
+                                np.clip(mean_norm_scores[i][method_ind] - std_norm_scores[i][method_ind],-1 if RMSE else 0,1),
+                                np.clip(mean_norm_scores[i][method_ind] + std_norm_scores[i][method_ind],-1 if RMSE else 0,1),
                                 alpha=0.2,
                                 color=palette[method_ind]
                             )
                             ax.plot(
                                 iterations,
-                                mean_norm_scores[i][method_ind] - std_norm_scores[i][method_ind],
+                                np.clip(mean_norm_scores[i][method_ind] - std_norm_scores[i][method_ind],-1 if RMSE else 0,1),
                                 linestyle='--',
                                 color=palette[method_ind],
                                 alpha=0.6,
@@ -302,7 +317,7 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
                             )
                             ax.plot(
                                 iterations,
-                                mean_norm_scores[i][method_ind] + std_norm_scores[i][method_ind],
+                                np.clip(mean_norm_scores[i][method_ind] + std_norm_scores[i][method_ind],-1 if RMSE else 0,1),
                                 linestyle='--',
                                 color=palette[method_ind],
                                 alpha=0.6,
@@ -320,8 +335,8 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
                 ax.tick_params(axis='both', which='major', labelsize=28)
                 ax.xaxis.set_major_locator(MaxNLocator(6))
                 ax.yaxis.set_major_locator(MaxNLocator(5))
-                title = 'Number Leaves' if i == 0 else 'Max Depth' if i == 1 else 'Joint'
                 
+                title = 'Number Leaves' if i == 0 else 'Max Depth' if i == 1 else 'Joint' if i==2 else 'Num Iter & Joint'
                 title += f' and Randomness: '
                 title += 'Total' if randomness == 0 else 'Seeds' if randomness == 1 else 'Task'
                 ax.set_title(title, fontsize=18)
@@ -337,8 +352,10 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
                     if i // 3 == 2: 
                         ax.set_xlabel('Iteration', fontsize=14)
     lines, labels = axes[0].get_legend_handles_labels()
-    fig.legend(lines, labels, loc='lower center', ncol=len(HPO_METHODS_NAMES), fontsize=16, bbox_to_anchor=(0.5, -0.025)) if classification else fig.legend(lines, labels, loc='lower center', ncol=len(HPO_METHODS_NAMES), fontsize=16, bbox_to_anchor=(0.5, -0.025))
+    fig.legend(lines, labels, loc='lower center', ncol=len(method_names), fontsize=16, bbox_to_anchor=(0.5, -0.025)) if classification else fig.legend(lines, labels, loc='lower center', ncol=len(method_names), fontsize=16, bbox_to_anchor=(0.5, -0.025))
     bigtitle = 'Comparison of Methods'
+    if not classification:
+        bigtitle += ' for Regression Task'
     if RMSE:
         bigtitle += ' using RMSE'
     if classification:
@@ -354,21 +371,39 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
         file += '_classficiation'
     if confidence_interval:
         file += '_confindence_interval'
+    if task2:
+        file +="_Task2"
     plt.savefig(f'plots/{file}.png', bbox_inches='tight')
     plt.show()
 
 
-def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classification=False, adtm=False, confidence_interval=False, randomness=0, rmse=False):
+def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classification=False, adtm=False, confidence_interval=False, randomness=0, rmse=False, task2 = False):
+    if task2 and (METHOD == 'hyperband' or METHOD == 'SMAC'):
+        ValueError('In Task 2 we do not consider SMAC or hyperband')
+    if task2:
+        num_tuning_strat = NUM_TUNING_STRAT_TASK2
+        tuning_strat = TUNING_STRAT_TASK2
+        method_names = HPO_METHODS_SUBS_NAMES 
+        methods = HPO_METHODS_SUBS
+    else:
+        num_tuning_strat = NUM_TUNING_STRAT
+        tuning_strat = TUNING_STRAT
+        method_names = HPO_METHODS_NAMES
+        methods = HPO_METHODS 
     if classification:
         num_tasks = NUM_CLASS_TASKS
     else: 
         num_tasks = NUM_REGR_TASKS
     if rmse:
-        title = 'Average RMSE'
+        title = 'Aver. RMSE '
 
     else:
-        title = 'Aggregated score'
-
+        title = 'Aggr. score '
+    if classification:
+        title += 'for Classification Tasks '
+    else:
+        title += 'for Regression Tasks '
+    title += f'using {method_names[methods.index(METHOD)]}'
     # if adtm:
     #     title += ' (ADTM)'
     
@@ -380,25 +415,24 @@ def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classificatio
     # title += f' using the hyperparameter selction method: {METHOD}'
     palette = set_plot_theme()
     plt.figure(figsize=(12, 8))
-    method_index = HPO_METHODS.index(METHOD)
-    if HPO_METHODS[method_index] =='hyperband':
-        num_iters = scores[0][method_index].shape[0]
-    else:
+    method_index = methods.index(METHOD)
+    if task2 or methods[method_index] !='hyperband':
         num_iters = NUM_ITERS
-    norm_scores = np.zeros((NUM_TUNING_STRAT,num_iters,num_tasks, NUM_SEEDS)) 
-    mean_seeds = np.zeros((NUM_TUNING_STRAT,num_iters,num_tasks)) 
-    mean_tasks = np.zeros((NUM_TUNING_STRAT,num_iters, NUM_SEEDS)) 
-    avg_var_across_tasks = np.zeros((NUM_TUNING_STRAT,num_iters,num_tasks, NUM_SEEDS)) 
-    avg_var_across_seeds = np.zeros((NUM_TUNING_STRAT,num_iters,num_tasks, NUM_SEEDS)) 
-    mean_norm_scores = np.zeros((NUM_TUNING_STRAT,num_iters)) 
-    std_norm_scores  = np.zeros((NUM_TUNING_STRAT,num_iters)) 
-    lower_lim  = np.zeros((NUM_TUNING_STRAT,num_iters)) 
-    upper_lim  = np.zeros((NUM_TUNING_STRAT,num_iters)) 
+    elif methods[method_index] =='hyperband':
+        num_iters = scores[0][method_index].shape[0]
+    norm_scores = np.zeros((num_tuning_strat,num_iters,num_tasks, NUM_SEEDS)) 
+    mean_seeds = np.zeros((num_tuning_strat,num_iters,num_tasks)) 
+    mean_tasks = np.zeros((num_tuning_strat,num_iters, NUM_SEEDS)) 
+    avg_var_across_tasks = np.zeros((num_tuning_strat,num_iters,num_tasks, NUM_SEEDS)) 
+    avg_var_across_seeds = np.zeros((num_tuning_strat,num_iters,num_tasks, NUM_SEEDS)) 
+    mean_norm_scores = np.zeros((num_tuning_strat,num_iters)) 
+    std_norm_scores  = np.zeros((num_tuning_strat,num_iters)) 
+    lower_lim  = np.zeros((num_tuning_strat,num_iters)) 
+    upper_lim  = np.zeros((num_tuning_strat,num_iters)) 
   
-    for i in range(NUM_TUNING_STRAT):
-        norm_scores[i,:,:,:] = normalize_scores(scores, adtm)[i][method_index]
+    for i in range(num_tuning_strat):
+        norm_scores[i,:,:,:] = normalize_scores(scores, adtm,task2)[i][method_index]
         mean_norm_scores[i,:] = np.mean(norm_scores[i,:,:,:], axis=(1,2))
-        print(np.std(norm_scores[i,:,:,:], axis=(1,2)).shape)
         std_norm_scores[i,:] = np.std(norm_scores[i,:,:,:], axis=(1,2))
         if confidence_interval:
             lower_lim[i,:] = np.percentile(norm_scores[i,:,:,:], 5, axis=(1,2))
@@ -408,24 +442,24 @@ def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classificatio
         iterations = np.arange(NUM_ITERS)
     else:
         iterations = np.linspace(0,NUM_ITERS-1,num_iters)
-    for i in range(NUM_TUNING_STRAT):
-        plt.plot(iterations, mean_norm_scores[i,:], label=TUNING_STRAT[i], color=palette[i], marker=MARKERS[i], markersize=14, linewidth=2.5, markevery=15)
+    for i in range(num_tuning_strat):
+        plt.plot(iterations, np.clip(mean_norm_scores[i,:],-1 if rmse else 0,1), label=tuning_strat[i], color=palette[i], marker=MARKERS[i], markersize=14, linewidth=2.5, markevery=15)
         #print(i, method_index , NAME_TUNING[i])
         if randomness == 1:       # Randomness due to the seeds
             mean_tasks[i,:,:] = np.mean(norm_scores[i,:,:,:], axis=1)
             avg_var_across_tasks[i,:] = np.std(mean_tasks[i,:,:], axis=-1)
 
-            plt.fill_between(iterations, mean_norm_scores[i , :] - avg_var_across_tasks[i , :], mean_norm_scores[i][method_index , :] + avg_var_across_tasks[i][method_index , :], alpha=0.2, color=palette[i])
-            plt.plot(iterations, mean_norm_scores[i, :] - avg_var_across_tasks[i, :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
-            plt.plot(iterations, mean_norm_scores[i, :] + avg_var_across_tasks[i, :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+            plt.fill_between(iterations, np.clip(mean_norm_scores[i , :] - avg_var_across_tasks[i , :],-1 if rmse else 0,1), np.clip(mean_norm_scores[i][method_index , :] + avg_var_across_tasks[i][method_index , :],-1 if rmse else 0,1), alpha=0.2, color=palette[i])
+            plt.plot(iterations, np.clip(mean_norm_scores[i, :] - avg_var_across_tasks[i, :],-1 if rmse else 0,1), linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+            plt.plot(iterations, np.clip(mean_norm_scores[i, :] + avg_var_across_tasks[i, :],-1 if rmse else 0,1), linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
         
         # Randomness due to the tasks
         elif randomness == 2:
             mean_seeds[i,:,:] = np.mean(norm_scores[i,:,:,:], axis=-1)
             avg_var_across_seeds[i] = np.std(mean_seeds[i], axis=-1)
-            plt.fill_between(iterations, mean_norm_scores[i, :] - avg_var_across_seeds[i, :], mean_norm_scores[i, :] + avg_var_across_seeds[i, :], alpha=0.2, color=palette[i])
-            plt.plot(iterations, mean_norm_scores[i, :] - avg_var_across_seeds[i, :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
-            plt.plot(iterations, mean_norm_scores[i, :] + avg_var_across_seeds[i, :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+            plt.fill_between(iterations, np.clip(mean_norm_scores[i, :] - avg_var_across_seeds[i, :],-1 if rmse else 0,1), np.clip(mean_norm_scores[i, :] + avg_var_across_seeds[i, :],-1 if rmse else 0,1), alpha=0.2, color=palette[i])
+            plt.plot(iterations, np.clip(mean_norm_scores[i, :] - avg_var_across_seeds[i, :],-1 if rmse else 0,1), linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+            plt.plot(iterations, np.clip(mean_norm_scores[i, :] + avg_var_across_seeds[i, :],-1 if rmse else 0,1), linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
 
         else:
             if confidence_interval:
@@ -434,9 +468,9 @@ def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classificatio
                 plt.plot(iterations, upper_lim[i, :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
             
             else:
-                plt.fill_between(iterations, mean_norm_scores[i, :] - std_norm_scores[i, :], mean_norm_scores[i, :] + std_norm_scores[i, :], alpha=0.2, color=palette[i])
-                plt.plot(iterations, mean_norm_scores[i, :] - std_norm_scores[i, :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
-                plt.plot(iterations, mean_norm_scores[i, :] + std_norm_scores[i, :], linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+                plt.fill_between(iterations, np.clip(mean_norm_scores[i, :] - std_norm_scores[i, :],-1 if rmse else 0,1), np.clip(mean_norm_scores[i, :] + std_norm_scores[i, :],-1 if rmse else 0,1), alpha=0.2, color=palette[i])
+                plt.plot(iterations, np.clip(mean_norm_scores[i, :] - std_norm_scores[i, :],-1 if rmse else 0,1), linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+                plt.plot(iterations, np.clip(mean_norm_scores[i, :] + std_norm_scores[i, :],-1 if rmse else 0,1), linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
 
     for spine in plt.gca().spines.values():
         spine.set_edgecolor('dimgray')  # Set the desired color here
@@ -453,40 +487,16 @@ def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classificatio
     plt.title(title, fontsize=24)
     plt.xlabel('Iteration', fontsize=30)
     plt.ylabel('Average aggregated test score', fontsize=30)
-    if rmse:
+    if rmse or METHOD == 'hyperband':
         plt.legend(loc="center left", ncol=1, bbox_to_anchor=(0.413, 0.8), fontsize=30)
 
     else:
         plt.legend(loc="center left", ncol=1, bbox_to_anchor=(0.413, 0.2), fontsize=30)
-    # plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=len(METHODS), fontsize=30)
-
     plt.xlim(0, NUM_ITERS - 1)
     if adtm:
         plt.ylim(0, 1)
-
     else:
         plt.ylim(-0.5, 1)
-    
-    # # Create a table with the information as one row below the title
-    # table_data = [
-    #     ['Task', 'Regression' if classification == False else 'Classification', 
-    #      "Method", 'GP-Boost' if METHOD == 'gp_bo' else 'TPE' if METHOD == 'tpe' else 'Random Search', 
-    #      "Randomness", "Seeds" if randomness == 1 else "Tasks" if randomness == 2 else "Both", 
-    #      "ADTM", "Yes" if adtm else "No"]
-    # ]
-    # plt.subplots_adjust(bottom=0.2) 
-    # table = plt.table(cellText=table_data, colWidths=[0.15] * len(table_data[0]), loc='bottom', cellLoc='center', bbox=[0, -0.3, 1, 0.1])
-    
-    # table.auto_set_font_size(False)
-    # table.set_fontsize(10)
-    # for (row,col), cell in table.get_celld().items():
-    #     cell.set_height(0.05)
-    #     if col  % 2 == 0:
-    #         cell.get_text().set_fontweight('bold') 
-    #         cell.set_facecolor('lightgray')
-    #     else:
-    #         cell.set_facecolor('white')
-    #         cell.set_edgecolor('black')
     file = "agg_scores"
     file += "_classification" if classification else "_regression"
     if adtm:
@@ -507,6 +517,59 @@ def plot_scores_aggregated_tasks_per_tuning_method(scores, METHOD, classificatio
     if rmse:
         file += "_rmse"
     file += f"_{METHOD}"
-
+    if task2:
+        file +="_Task2"
     plt.savefig(f"plots/{file}.png")
     plt.show()
+
+def get_scores_num_iter():
+    scores_regr = [np.zeros((NUM_ITERS, NUM_REGR_TASKS, NUM_SEEDS, NUM_FOLDS)) for i in range(NUM_METHODS_SUBS)]
+    scores_class = [np.zeros((NUM_ITERS, NUM_CLASS_TASKS, NUM_SEEDS, NUM_FOLDS)) for i in range(NUM_METHODS_SUBS)]
+    rmse_regr = [np.zeros((NUM_ITERS, NUM_REGR_TASKS, NUM_SEEDS, NUM_FOLDS)) for i in range(NUM_METHODS_SUBS)]
+    suites = [334,335,336,337]
+    k1 = 0
+    k2 = 0
+    for suite_id in suites:
+        tasks = np.load(f"task_indices/{suite_id}_task_indices.npy")
+
+        for task_id in tasks:
+            for l, seed in enumerate(seeds):
+                #print('Seed',seed, 'Suite_id', suite_id, 'Task_id', task_id)
+                data = pd.read_csv(f"/Users/floris/Desktop/ETH/ETH_FS25/Semesterarbeit/Result_Task_2/seed_{seed}/{suite_id}_{task_id}.csv")
+                #get the len of the data of all folds for one TUNING_STRAT strategy
+                LEN_DATA = len(data.loc[(data['iter'])])
+                #print(LEN_DATA)
+                if (suite_id == 335) or (suite_id == 336):
+                    try_num_iter_score = data.loc[(data['joint_tuning_depth_leaves'] == True) & (data['try_num_iter'] == True), 'current_best_test_score'].reset_index(drop=True)
+                    try_num_iter_rmse = data.loc[(data['joint_tuning_depth_leaves'] == True) & (data['try_num_iter'] == True), 'current_best_test_rmse'].reset_index(drop=True)
+                    df_rmse = pd.DataFrame({'try_num_iter': try_num_iter_rmse})
+                    df_score = pd.DataFrame({'try_num_iter': try_num_iter_score})
+                    df_rmse['method'] = data.loc[0:LEN_DATA-1, 'method']
+                    df_score['method'] = data.loc[0:LEN_DATA-1, 'method']
+                    df_rmse['fold'] = data.loc[0:LEN_DATA-1, 'fold']
+                    df_score['fold'] = data.loc[0:LEN_DATA-1, 'fold']
+                    for i, method in enumerate(HPO_METHODS_SUBS):
+                        for m in FOLDS:
+                            scores_regr[i][:,k2,l,m] = df_score.loc[(df_score['method'] == method) & (df_score['fold'] == m), 'try_num_iter'].values
+                            rmse_regr[i][:,k2,l,m] = df_rmse.loc[(df_rmse['method'] == method) & (df_rmse['fold'] == m), 'try_num_iter'].values
+                else:
+                    try_num_iter_score = data.loc[(data['joint_tuning_depth_leaves'] == True) & (data['try_num_iter'] == True), 'current_best_test_score'].reset_index(drop=True)
+                    df_score = pd.DataFrame({'try_num_iter': try_num_iter_score})
+                    df_score['method'] = data.loc[0:LEN_DATA-1, 'method']
+                    df_score['fold'] = data.loc[0:LEN_DATA-1, 'fold']
+                    for i, method in enumerate(HPO_METHODS_SUBS):
+                        for m in FOLDS:
+                            #print(df_score)
+                            scores_class[i][:,k1,l,m] = df_score.loc[(df_score['method'] == method) & (df_score['fold'] == m), 'try_num_iter'].values
+            if (suite_id == 335) or (suite_id == 336):
+                k2 += 1
+            else:
+                k1 += 1
+    aggregated_scores_regr = []
+    aggregated_scores_class = []
+    aggregated_rmse  = []
+    for i in range(NUM_METHODS_SUBS):
+        aggregated_scores_regr.append(np.mean(scores_regr[i], axis=-1)) #take mean over folds
+        aggregated_scores_class.append(np.mean(scores_class[i], axis=-1)) #take mean over folds
+        aggregated_rmse.append(np.mean(rmse_regr[i], axis=-1)) #take mean over folds
+    return aggregated_scores_regr, aggregated_scores_class, aggregated_rmse

@@ -344,7 +344,7 @@ class ParameterOptimization:
 
 
     def gp_bo_method(self, X_train_full, y_train_full, X_test, y_test):
-        """This function performs hyperparameter tuning using the GP-BOOST method."""
+        """This function performs hyperparameter tuning using the GP-BO method."""
         # Define the hyperparameter space
         space = [
             Real(0.001, 1, name='learning_rate'),
