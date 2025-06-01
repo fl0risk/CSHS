@@ -5,3 +5,9 @@ __pycache__
 Results/
 task_indices/
 plots/
+auxiliary_code.py
+Hyperband/
+.vevn/
+.conda/
+smac3_output/
+financial_DATA/

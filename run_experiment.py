@@ -47,7 +47,7 @@ def main(args):
     final_results["classification"] = 1 if suite_id in [334, 337] else 0
 
     # Save the results
-    final_results.to_csv(os.path.join(args.result_folder, file_path), index=False, mode='a',header=False)
+    final_results.to_csv(os.path.join(args.result_folder, file_path), index=False,header=False)
 
 
 if __name__ == '__main__':
