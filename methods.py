@@ -69,11 +69,7 @@ class ParameterOptimization:
             X_train_full, X_test = self.X.iloc[full_train_index], self.X.iloc[test_index]
             y_train_full, y_test = self.y.iloc[full_train_index], self.y.iloc[test_index]
             if not self.try_num_iter: #tune without number of boosting iterations
-                if not self.joint_tuning_depth_leaves:
-                    trials_grid_search = self.grid_search_method(
-                        X_train_full=X_train_full, y_train_full=y_train_full, 
-                        X_test=X_test, y_test=y_test
-                    )
+                #uncomment if you want to use grid_search
                 trials_random_search = self.grid_search_method(
                     X_train_full=X_train_full, y_train_full=y_train_full, 
                     X_test=X_test, y_test=y_test, 
@@ -112,12 +108,12 @@ class ParameterOptimization:
                         else:
                             final_results = pd.concat([final_results, trials])
             else:
-                for method in ['grid_search','random_search', 'tpe', 'gp_bo']:
+                for method in ['random_search', 'tpe', 'gp_bo']: # add grid_search
                         trials = eval(f'trials_{method}')
                         trials['fold'] = fold
                         trials['method'] = method
 
-                        if fold == 0 and method == 'grid_search':
+                        if fold == 0 and method == 'random_search': #TODO: change to grid_seach
                             final_results = trials
                         else:
                             final_results = pd.concat([final_results, trials])
@@ -394,7 +390,7 @@ class ParameterOptimization:
 
             return score
 
-        result = gp_minimize(objective_gp_bo, space, n_calls=10, random_state=self.seed)  #change back to 135
+        result = gp_minimize(objective_gp_bo, space, n_calls=135, random_state=self.seed)  #TODO: change back to 135
 
         # Restore the 'numpy' module to its original state
         delattr(np, 'int')

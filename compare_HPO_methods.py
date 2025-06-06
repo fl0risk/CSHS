@@ -295,7 +295,7 @@ def compare_method(scores,classification = False, RMSE = False, confidence_inter
                                 iterations,
                                 upper_lim[i][method_ind],
                                 linestyle='--',
-                                color=palette[i],
+                                color=palette[method_ind],
                                 alpha=0.6,
                                 linewidth=2.5
                             )
