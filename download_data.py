@@ -24,6 +24,23 @@ def main():
 
         with open(f"task_indices/{suite_id}_task_names.json", "w") as f:
             json.dump(names, f)
+    
+    #for financial task
+    # tasks = [361055, 361066, 317599]
+
+    # os.makedirs("task_indices", exist_ok=True)
+    # np.save(f"task_indices/financial_task_indices.npy", tasks)
+
+    # names = []
+
+    # for task_id in tasks:
+    #     task = openml.tasks.get_task(task_id)   # download the OpenML task
+    #     dataset = task.get_dataset()    #get dataset from task
+    #     name = dataset.name     #get name from dateset
+    #     names.append(name)  #append names               
+
+    # with open(f"task_indices/financial_task_names.json", "w") as f:
+    #     json.dump(names, f)
 
 
 

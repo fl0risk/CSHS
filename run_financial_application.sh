@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --output=Output/run_%j_%a.out
 #SBATCH --error=Error/run_%j_%a.err
-#SBATCH --time=24:00:00
-#SBATCH --mem-per-cpu=1028
+#SBATCH --time=4:00:00
+#SBATCH --mem-per-cpu=200
 #SBATCH --open-mode=append
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --mail-user=fkoster@ethz.ch
@@ -20,7 +20,7 @@ venv_name="Semesterarbeit"
 source "${venv_name}/bin/activate"
 
 # Define the specific tasks
-tasks=(361055,361066,362291,317599)
+tasks=(361055 361066 362291 317599)
 
 # Define the seed values as arrays
 seeds=(27225 32244 34326 92161 99246 108473 117739 147316 235053 257787 89389 443417 572858 620176 671487 710570 773246 777646 778572 936518)
@@ -43,7 +43,7 @@ if [ "$task_index" -ge "$num_tasks" ] || [ "$seed_index" -ge "$num_seeds" ]; the
 fi
 
 # Run the Python script with calculated task, seed, and custom task ID
-echo "Running array task ${SLURM_ARRAY_TASK_ID} with task: ${task_value}, seed: ${seed_value}
+echo "Running array task ${SLURM_ARRAY_TASK_ID} with task: ${task_value}, seed: ${seed_value}"
 python "${python_script}" --task "${task_value}" --seed "${seed_value}" --result_folder "${result_folder}" 
 
 # Deactivate virtual environment (not strictly necessary)
