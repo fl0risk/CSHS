@@ -12,3 +12,4 @@ Hyperband/
 smac3_output/
 financial_DATA/
 plots_pub/
+*.pdf

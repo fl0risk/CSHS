@@ -121,7 +121,25 @@ class ParameterOptimization:
         final_results.reset_index(inplace=True)
         final_results.rename(columns={"index": "iter"}, inplace=True)
         return final_results
-
+    def run_random_search(self,):
+        for fold, (full_train_index, test_index) in enumerate(self.splits):
+            X_train_full, X_test = self.X.iloc[full_train_index], self.X.iloc[test_index]
+            y_train_full, y_test = self.y.iloc[full_train_index], self.y.iloc[test_index]
+            trials_random_search = self.grid_search_method(
+                X_train_full=X_train_full, y_train_full=y_train_full, 
+                X_test=X_test, y_test=y_test, 
+                num_try_random=1 
+            )
+            trials = eval('trials_random_search')
+            trials['fold'] = fold
+            trials['method'] = 'random_search'
+            if fold == 0:
+                final_results = trials
+            else:
+                final_results = pd.concat([final_results, trials])
+        final_results.reset_index(inplace=True)
+        final_results.rename(columns={"index": "iter"}, inplace=True)
+        return final_results
     def run_hyperband(self,):
         for fold, (full_train_index, test_index) in enumerate(self.splits):
             X_train_full, X_test = self.X.iloc[full_train_index], self.X.iloc[test_index]
@@ -130,10 +148,6 @@ class ParameterOptimization:
             trials = eval('trials_hyperband')
             trials['fold'] = fold
             trials['method'] = 'hyperband'
-            #Rename all ParameterConfig Files
-            #param_config_files = [f for f in os.listdir('Hyperband/ParameterConfigurations/') if f.startswith('param_config')]
-            # for file in param_config_files:
-            #     os.rename(f'Hyperband/ParameterConfigurations/{file}', f'Hyperband/ParameterConfigurations/fold_{fold}_{file}')
             if fold == 0:
                 final_results = trials
             else:
@@ -431,7 +445,7 @@ class ParameterOptimization:
         df_trials['joint_tuning_depth_leaves'] = self.joint_tuning_depth_leaves
         df_trials['try_num_iter'] = self.try_num_iter
         return df_trials # score, best_parameters, self.best_iter
-    def hyperband_method(self,  X_train_full, y_train_full, X_test, y_test, R=1000, factor=3):
+    def hyperband_method(self,  X_train_full, y_train_full, X_test, y_test, R=2000, factor=2): #TODO: change R, factor
         self.min_score = float('inf')
         
         # Split the full training set into training and validation sets

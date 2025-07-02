@@ -607,7 +607,7 @@ def plot_scores_per_task_tuning_methods(scores, METHOD,names, classification=Fal
     if normalization:
         scores,_ = normalize_scores(scores, adtm) 
     for i in range(len(name_tuning)):
-        get_nested_shape(scores[i])
+        #get_nested_shape(scores[i])
         mean_norm_scores.append(np.mean(scores[i][method_index], axis=-1))
         std_norm_scores.append( np.std(scores[i][method_index], axis=-1))#[i] = np.std(scores[i], axis=-1)
         if confidence_interval:
@@ -616,16 +616,28 @@ def plot_scores_per_task_tuning_methods(scores, METHOD,names, classification=Fal
     for i in range(len(name_tuning)):
         for k in range(num_tasks):
             ax = axes[k]
-            ax.plot(
-                np.arange(NUM_ITERS),
-                np.clip(mean_norm_scores[i][:, k],0-rmse - log_loss,1),
-                label=name_tuning[i],
-                color=palette[i],
-                marker=MARKERS[i],
-                markersize=14,
-                linewidth=2.5,
-                markevery=20
-            )
+            if normalization and (not log_loss and not rmse):
+                ax.plot(
+                    np.arange(NUM_ITERS),
+                    np.clip(mean_norm_scores[i][:, k],0,1),
+                    label=name_tuning[i],
+                    color=palette[i],
+                    marker=MARKERS[i],
+                    markersize=14,
+                    linewidth=2.5,
+                    markevery=20
+                )
+            else:
+                ax.plot(
+                    np.arange(NUM_ITERS),
+                    mean_norm_scores[i][:, k],
+                    label=name_tuning[i],
+                    color=palette[i],
+                    marker=MARKERS[i],
+                    markersize=14,
+                    linewidth=2.5,
+                    markevery=20
+                )
             if Borders:
                 if confidence_interval:
                     ax.plot(np.arange(NUM_ITERS), np.clip(lower_lim[i][:, k],0-rmse-log_loss,1), linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
@@ -650,41 +662,62 @@ def plot_scores_per_task_tuning_methods(scores, METHOD,names, classification=Fal
 
             # Customize grid
             ax.grid(True, color='lightgray', linewidth=0.5)
-
             # Hide x labels and tick labels for all but the bottom row
             if k < (num_rows - 1) * num_cols:
                 if not (classification and k == 19):
                     ax.set_xticklabels([])
 
             # Hide y labels and tick labels for all but the leftmost column
-            if k % num_cols != 0:
-                    ax.set_yticklabels([])
-
+            # if k % num_cols != 0:
+            #         ax.set_yticklabels([])
+            
             for spine in ax.spines.values():
                 spine.set_edgecolor('dimgray')  # Set the desired color here
                 spine.set_linewidth(1)      # Optionally, adjust the thickness
 
             # Increase the size of remaining tick labels
-            ax.tick_params(axis='both', which='major', labelsize=28)
+            ax.tick_params(axis='both', which='major', labelsize=12)
             ax.xaxis.set_major_locator(MaxNLocator(6))
             ax.yaxis.set_major_locator(MaxNLocator(5))
 
             ax.set_xlim(0, NUM_ITERS - 1)
-            if adtm:
-                ax.set_ylim(0, 1)
+            # Each subplot now uses its own y-scale based on its data
+            if normalization:
+                if i == 0 and not log_loss and not rmse:
+                    ax.set_ylim(0,1)
+                elif i==0 and (log_loss or rmse):
+                    y_data = [mean_norm_scores[j][25:135, k] for j in range(len(TUNING_STRAT))]
+                    y_min = min(np.min(y) for y in y_data)
+                    y_max = max(np.max(y) for y in y_data)
+                    y_range = y_max - y_min
+                    ax.set_ylim(round(y_min - 0.1 * y_range,7), round(y_max + 0.1 * y_range,7))
             else:
-                ax.set_ylim(-1, 1)
+                if i == 0 and not log_loss and not rmse :
+                    y_data = [mean_norm_scores[j][25:135, k] for j in range(len(TUNING_STRAT))]
+                    y_min = min(np.min(y) for y in y_data)
+                    y_max = max(np.max(y) for y in y_data)
+                    # Add some padding to the limits
+                    y_range = y_max - y_min
+                    ax.set_ylim(round(y_min - 0.1 * y_range,7), round(y_max + 0.1 * y_range,7))
+                else:
+                    y_data = [mean_norm_scores[j][25:135, k] for j in range(len(TUNING_STRAT))]
+                    y_min = min(np.min(y) for y in y_data)
+                    y_max = max(np.max(y) for y in y_data)
+                    # Add some padding to the limits
+                    y_range = y_max - y_min
+                    ax.set_ylim(round(y_min - 0.1 * y_range,7), round(y_max + 0.1 * y_range,7))
+
 
 
     # Make each subplot (axes) quadratic (equal width and height)
-    for ax in axes[:num_tasks]:
-        pos = ax.get_position()
-        width = pos.width
-        height = pos.height
-        max_dim = max(width, height)
-        # Center the axes and set both width and height to max_dim
-        new_pos = [pos.x0, pos.y0, max_dim, max_dim]
-        ax.set_position(new_pos)
+    # for ax in axes[:num_tasks]:
+    #     pos = ax.get_position()
+    #     width = pos.width
+    #     height = pos.height
+    #     max_dim = max(width, height)
+    #     # Center the axes and set both width and height to max_dim
+    #     new_pos = [pos.x0, pos.y0, max_dim, max_dim]
+    #     ax.set_position(new_pos)
 
     # Add legend
     lines, labels = axes[0].get_legend_handles_labels()
@@ -695,11 +728,7 @@ def plot_scores_per_task_tuning_methods(scores, METHOD,names, classification=Fal
         fontsize=30,
         bbox_to_anchor=(0.5, 0.959 if classification else 0.968)
     )
-
-    # Set a separate y-axis label for each subplot
-    for ax in axes[:num_tasks]:
-        ax.set_ylabel('Average test score', fontsize=18)
-
+    
     # Set global x-label
     fig.text(0.5, 0.045, 'Iteration', ha='center', va='center', fontsize=30)
 
@@ -754,8 +783,8 @@ def create_scores_dict_modified(classification=False, rmse=False, current_best =
     if NUM_ITERS_H > NUM_ITERS:
                     ValueError('There are too much iterations in the Hyperband method.')
     scores_NL = [np.zeros((NUM_ITERS, NUM_TASKS, NUM_SEEDS, NUM_FOLDS)) if HPO_METHODS[i] != 'hyperband' else np.zeros((NUM_ITERS_H, NUM_TASKS, NUM_SEEDS, NUM_FOLDS)) for i in range(NUM_METHODS)]
-    for i in range(NUM_METHODS):
-        print('The following shape for',i, scores_NL[i].shape)
+    # for i in range(NUM_METHODS):
+    #     #print('The following shape for',i, scores_NL[i].shape)
     scores_MD = [np.zeros((NUM_ITERS, NUM_TASKS, NUM_SEEDS, NUM_FOLDS)) if HPO_METHODS[i] != 'hyperband' else np.zeros((NUM_ITERS_H, NUM_TASKS, NUM_SEEDS, NUM_FOLDS)) for i in range(NUM_METHODS)]
     scores_J = [np.zeros((NUM_ITERS, NUM_TASKS, NUM_SEEDS, NUM_FOLDS)) if HPO_METHODS[i] != 'hyperband' else np.zeros((NUM_ITERS_H, NUM_TASKS, NUM_SEEDS, NUM_FOLDS)) for i in range(NUM_METHODS)]
     names = []
@@ -791,7 +820,7 @@ def create_scores_dict_modified(classification=False, rmse=False, current_best =
                     df['fold'] = pd.concat([data.loc[0:LEN_DATA-1, 'fold'],data_H.loc[0:LEN_DATA_H-1, 'fold'],data_SMAC.loc[0:LEN_DATA_SMAC-1, 'fold']], ignore_index = True)
                     for i, method in enumerate(HPO_METHODS):
                         for m in FOLDS:
-                            print(method, df.loc[(df['method'] == method) & (df['fold'] == m), 'try_num_leaves_rmse'].shape)
+                           # print(method, df.loc[(df['method'] == method) & (df['fold'] == m), 'try_num_leaves_rmse'].shape)
                             scores_NL[i][:, k, l, m] = df.loc[(df['method'] == method) & (df['fold'] == m), 'try_num_leaves_rmse'].values
                             scores_MD[i][:, k, l, m] = df.loc[(df['method'] == method) & (df['fold'] == m), 'try_max_depth_rmse'].values
                             scores_J[i][:, k, l, m] = df.loc[(df['method'] == method) & (df['fold'] == m), 'try_joint_rmse'].values
@@ -852,7 +881,7 @@ def compare_std(scores,TUNING_SETTING,names, classification = False, adtm = Fals
         scores,_ = normalize_scores(scores, adtm) 
     methods = np.array([0,1,2,4])
     for i in methods:
-        print(i)
+        #print(i)
         std_norm_scores.append(np.std(scores[tuning_index][i], axis=-1))#[i] = np.std(scores[i], axis=-1)
     for i in range(NUM_METHODS_SUBS):
         for k in range(num_tasks):
@@ -956,3 +985,190 @@ def compare_std(scores,TUNING_SETTING,names, classification = False, adtm = Fals
     plt.savefig(f"plots_pub/{file}.png")
     plt.show()
 
+def plot_scores_per_task_selection_methods(scores, Tuning,names, classification=False, adtm=False, confidence_interval=False, rmse=False,log_loss = False, normalization = True, Borders = False):
+    if rmse:
+        title = 'Average RMSE'
+    elif log_loss:
+        title = 'Average Log Loss'
+    else:
+        title = 'Average score'
+    if not normalization:
+        title += ' (not normalized)'
+    if adtm:
+        title += ' (ADTM)'
+
+    if classification:
+        num_tasks = NUM_CLASS_TASKS
+        title += ' per iteration for each classification task'
+
+    else:
+        num_tasks = NUM_REGR_TASKS
+        title += ' per iteration for each regression task'
+    title += f' using the hyperparameter tuning setting: {Tuning}'
+    num_cols = 4
+    num_rows = (num_tasks + num_cols - 1) // num_cols
+    tuning_index = TUNING_STRAT.index(Tuning)
+    palette = set_plot_theme()
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(20, num_rows * 4))
+    axes = axes.flatten()
+
+    mean_norm_scores =[]# [np.zeros((NUM_METHODS,NUM_ITERS,num_tasks)),np.zeros((NUM_METHODS,NUM_ITERS,num_tasks))
+                       # ,np.zeros((NUM_METHODS_SUBS,NUM_ITERS,num_tasks))]
+    std_norm_scores  = []#[np.zeros((NUM_METHODS,NUM_ITERS,num_tasks)),np.zeros((NUM_METHODS,NUM_ITERS,num_tasks))
+                        #,np.zeros((NUM_METHODS_SUBS,NUM_ITERS,num_tasks))]
+    lower_lim  = []#[np.zeros((NUM_METHODS,NUM_ITERS,num_tasks)),np.zeros((NUM_METHODS,NUM_ITERS,num_tasks))
+                    #    ,np.zeros((NUM_METHODS_SUBS,NUM_ITERS,num_tasks))]
+    upper_lim  = []#[np.zeros((NUM_METHODS,NUM_ITERS,num_tasks)),np.zeros((NUM_METHODS,NUM_ITERS,num_tasks))
+                   #     ,np.zeros((NUM_METHODS_SUBS,NUM_ITERS,num_tasks))]
+    if normalization:
+        scores,_ = normalize_scores(scores, adtm) 
+    methods = [0,1,2,4]
+    for i in methods:
+        mean_norm_scores.append(np.mean(scores[tuning_index][i], axis=-1))
+        std_norm_scores.append( np.std(scores[tuning_index][i], axis=-1))#[i] = np.std(scores[i], axis=-1)
+        if confidence_interval:
+            lower_lim.append(np.percentile(scores[tuning_index][i], 95, axis=-1))#[i] = np.percentile(scores[i], 5, axis=-1)
+            upper_lim.append(np.percentile(scores[tuning_index][i], 95, axis=-1))#[i] = np.percentile(scores[i], 95, axis=-1)
+    for i in range(len(HPO_METHODS_SUBS)):
+        for k in range(num_tasks):
+            ax = axes[k]
+            if normalization and (not log_loss and not rmse):
+                ax.plot(
+                    np.arange(NUM_ITERS),
+                    np.clip(mean_norm_scores[i][:, k],0,1),
+                    label=HPO_METHODS_SUBS[i],
+                    color=palette[i],
+                    marker=MARKERS[i],
+                    markersize=14,
+                    linewidth=2.5,
+                    markevery=20
+                )
+            else:
+                ax.plot(
+                    np.arange(NUM_ITERS),
+                    mean_norm_scores[i][:, k],
+                    label=HPO_METHODS_SUBS[i],
+                    color=palette[i],
+                    marker=MARKERS[i],
+                    markersize=14,
+                    linewidth=2.5,
+                    markevery=20
+                )
+            if Borders:
+                if confidence_interval:
+                    ax.plot(np.arange(NUM_ITERS), np.clip(lower_lim[i][:, k],0-rmse-log_loss,1), linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+                    ax.plot(np.arange(NUM_ITERS), np.clip(upper_lim[i][:, k],0-rmse-log_loss,1), linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+
+                else:
+                    ax.plot(np.arange(NUM_ITERS), np.clip(mean_norm_scores[i][ :, k]
+                                - std_norm_scores[i][:, k],0-rmse-log_loss,1), linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+                    ax.plot(np.arange(NUM_ITERS), np.clip(mean_norm_scores[i][:, k]
+                                + std_norm_scores[i][:, k],0-rmse-log_loss,1), linestyle='--', color=palette[i], alpha=0.6, linewidth=2.5)
+
+            if len(names[k]) > 24:
+                names[k] = names[k][:24]
+
+            if not classification:
+                if k == 3:
+                    names[k] = names[k][:21]
+                elif k == 9:
+                    names[k] = names[k][:16]
+
+            ax.set_title(names[k], fontsize=28)
+
+            # Customize grid
+            ax.grid(True, color='lightgray', linewidth=0.5)
+            # Hide x labels and tick labels for all but the bottom row
+            if k < (num_rows - 1) * num_cols:
+                if not (classification and k == 19):
+                    ax.set_xticklabels([])
+
+            # Hide y labels and tick labels for all but the leftmost column
+            # if k % num_cols != 0:
+            #         ax.set_yticklabels([])
+            
+            for spine in ax.spines.values():
+                spine.set_edgecolor('dimgray')  # Set the desired color here
+                spine.set_linewidth(1)      # Optionally, adjust the thickness
+
+            # Increase the size of remaining tick labels
+            ax.tick_params(axis='both', which='major', labelsize=12)
+            ax.xaxis.set_major_locator(MaxNLocator(6))
+            ax.yaxis.set_major_locator(MaxNLocator(5))
+
+            ax.set_xlim(0, NUM_ITERS - 1)
+            # Each subplot now uses its own y-scale based on its data
+            if normalization:
+                if i == 0 and not log_loss and not rmse:
+                    ax.set_ylim(0,1)
+                elif i==0 and (log_loss or rmse):
+                    y_data = [mean_norm_scores[j][25:135, k] for j in range(len(HPO_METHODS_SUBS))]
+                    y_min = min(np.min(y) for y in y_data)
+                    y_max = max(np.max(y) for y in y_data)
+                    # Add some padding to the limits
+                    y_range = y_max - y_min
+                    ax.set_ylim(round(y_min - 0.1 * y_range,7), round(y_max + 0.1 * y_range,7))
+            else:
+                if i == 0 and not log_loss and not rmse :
+                    y_data = [mean_norm_scores[j][25:135, k] for j in range(len(HPO_METHODS_SUBS))]
+                    y_min = min(np.min(y) for y in y_data)
+                    y_max = max(np.max(y) for y in y_data)
+                    # Add some padding to the limits
+                    y_range = y_max - y_min
+                    ax.set_ylim(round(y_min - 0.1 * y_range,7), round(y_max + 0.1 * y_range,7))
+                else:
+                    y_data = [mean_norm_scores[j][25:135, k] for j in range(len(HPO_METHODS_SUBS))]
+                    y_min = min(np.min(y) for y in y_data)
+                    y_max = max(np.max(y) for y in y_data)
+                    # Add some padding to the limits
+                    y_range = y_max - y_min
+                    ax.set_ylim(round(y_min - 0.1 * y_range,7), round(y_max + 0.1 * y_range,7))
+
+
+
+    # Make each subplot (axes) quadratic (equal width and height)
+    # for ax in axes[:num_tasks]:
+    #     pos = ax.get_position()
+    #     width = pos.width
+    #     height = pos.height
+    #     max_dim = max(width, height)
+    #     # Center the axes and set both width and height to max_dim
+    #     new_pos = [pos.x0, pos.y0, max_dim, max_dim]
+    #     ax.set_position(new_pos)
+
+    # Add legend
+    lines, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        lines, labels,
+        loc='upper center',
+        ncol=len(HPO_METHODS_SUBS),
+        fontsize=30,
+        bbox_to_anchor=(0.5, 0.959 if classification else 0.968)
+    )
+    
+    # Set global x-label
+    fig.text(0.5, 0.045, 'Iteration', ha='center', va='center', fontsize=30)
+
+    # Adjust layout to leave space for legend and labels
+    #plt.tight_layout(rect=[0, 0, 1, 0.85])
+    if classification:
+        plt.subplots_adjust(top=0.894, bottom=0.08, left=0.1, hspace=0.2, wspace=0.2)
+    else:
+        plt.subplots_adjust(top=0.924, bottom=0.07, left=0.1, hspace=0.2, wspace=0.2)
+
+    # Set the title
+    fig.suptitle(title, fontsize=24)
+    file = "scores_per_task_selection_methods"
+    file += "_classification" if classification else "_regression"
+    if adtm:
+        file += "_adtm"
+    if confidence_interval:
+        file += "_confidence_interval"
+    if rmse:
+        file += "_rmse"
+    if log_loss:
+        file += "_log_loss"
+    file += f"_{Tuning}"
+
+    plt.savefig(f"plots_pub/{file}.png")
+    plt.show()
