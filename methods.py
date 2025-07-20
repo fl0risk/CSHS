@@ -87,7 +87,7 @@ class ParameterOptimization:
                 trials_random_search = self.grid_search_method(
                     X_train_full=X_train_full, y_train_full=y_train_full, 
                     X_test=X_test, y_test=y_test, 
-                    num_try_random=135 #TODO: change back to 135
+                    num_try_random=135 
                 )
                 trials_tpe = self.tpe_method(
                     X_train_full=X_train_full, y_train_full=y_train_full,
@@ -97,27 +97,16 @@ class ParameterOptimization:
                     X_train_full=X_train_full, y_train_full=y_train_full,
                     X_test=X_test, y_test=y_test
                 )
-            if self.joint_tuning_depth_leaves or self.try_num_iter:
-                for method in ['random_search','tpe', 'gp_bo']: 
-                        trials = eval(f'trials_{method}')
-                        trials['fold'] = fold
-                        trials['method'] = method
-
-                        if fold == 0 and method == 'random_search':
-                            final_results = trials
-                        else:
-                            final_results = pd.concat([final_results, trials])
-            else:
-                for method in ['random_search', 'tpe', 'gp_bo']: # add grid_search
-                        trials = eval(f'trials_{method}')
-                        trials['fold'] = fold
-                        trials['method'] = method
-
-                        if fold == 0 and method == 'random_search': #TODO: change to grid_seach
-                            final_results = trials
-                        else:
-                            final_results = pd.concat([final_results, trials])
             
+            for method in ['random_search','tpe', 'gp_bo']: 
+                    trials = eval(f'trials_{method}')
+                    trials['fold'] = fold
+                    trials['method'] = method
+
+                    if fold == 0 and method == 'random_search':
+                        final_results = trials
+                    else:
+                        final_results = pd.concat([final_results, trials])
         final_results.reset_index(inplace=True)
         final_results.rename(columns={"index": "iter"}, inplace=True)
         return final_results
@@ -128,7 +117,7 @@ class ParameterOptimization:
             trials_random_search = self.grid_search_method(
                 X_train_full=X_train_full, y_train_full=y_train_full, 
                 X_test=X_test, y_test=y_test, 
-                num_try_random=1 
+                num_try_random=135
             )
             trials = eval('trials_random_search')
             trials['fold'] = fold
@@ -140,6 +129,43 @@ class ParameterOptimization:
         final_results.reset_index(inplace=True)
         final_results.rename(columns={"index": "iter"}, inplace=True)
         return final_results
+    def run_tpe(self,):
+        for fold, (full_train_index, test_index) in enumerate(self.splits):
+            X_train_full, X_test = self.X.iloc[full_train_index], self.X.iloc[test_index]
+            y_train_full, y_test = self.y.iloc[full_train_index], self.y.iloc[test_index]
+            trials_tpe = self.tpe_method(
+                X_train_full=X_train_full, y_train_full=y_train_full, 
+                X_test=X_test, y_test=y_test
+            )      
+            trials = eval('trials_tpe')
+            trials['fold'] = fold
+            trials['method'] = 'tpe'
+            if fold == 0:
+                final_results = trials
+            else:
+                final_results = pd.concat([final_results, trials])
+        final_results.reset_index(inplace=True)
+        final_results.rename(columns={"index": "iter"}, inplace=True)
+        return final_results
+    def run_gp_bo(self,):
+        for fold, (full_train_index, test_index) in enumerate(self.splits):
+            X_train_full, X_test = self.X.iloc[full_train_index], self.X.iloc[test_index]
+            y_train_full, y_test = self.y.iloc[full_train_index], self.y.iloc[test_index]
+            trials_gp_bo = self.gp_bo_method(
+                X_train_full=X_train_full, y_train_full=y_train_full, 
+                X_test=X_test, y_test=y_test, 
+            )      
+            trials = eval('trials_gp_bo')
+            trials['fold'] = fold
+            trials['method'] = 'gp_bo'
+            if fold == 0:
+                final_results = trials
+            else:
+                final_results = pd.concat([final_results, trials])
+        final_results.reset_index(inplace=True)
+        final_results.rename(columns={"index": "iter"}, inplace=True)
+        return final_results
+        
     def run_hyperband(self,):
         for fold, (full_train_index, test_index) in enumerate(self.splits):
             X_train_full, X_test = self.X.iloc[full_train_index], self.X.iloc[test_index]
@@ -445,7 +471,7 @@ class ParameterOptimization:
         df_trials['joint_tuning_depth_leaves'] = self.joint_tuning_depth_leaves
         df_trials['try_num_iter'] = self.try_num_iter
         return df_trials # score, best_parameters, self.best_iter
-    def hyperband_method(self,  X_train_full, y_train_full, X_test, y_test, R=2000, factor=2): #TODO: change R, factor
+    def hyperband_method(self,  X_train_full, y_train_full, X_test, y_test, R=2150, factor=2.8): #TODO: change R, factor
         self.min_score = float('inf')
         
         # Split the full training set into training and validation sets
