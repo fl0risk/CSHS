@@ -42,13 +42,16 @@ def read_and_preprocess_dataset(classification=False):
         tasks = np.load(f"task_indices/{suite_id}_task_indices.npy")
 
         for task_id in tasks:
-            data = pd.read_csv(f"result_folder/seed_{SEED}/{suite_id}_{task_id}.csv")
-            df = pd.concat([df, data], ignore_index=True)
+            data1 = pd.read_csv(f"/Users/floris/Desktop/ETH/ETH_FS25/Semesterarbeit/Results/seed_{SEED}/{suite_id}_{task_id}.csv")
+            data2 = pd.read_csv(f"/Users/floris/Desktop/ETH/ETH_FS25/Semesterarbeit/Results_SMAC/seed_{SEED}/{suite_id}_{task_id}.csv")
+            data3 = pd.read_csv(f"/Users/floris/Desktop/ETH/ETH_FS25/Semesterarbeit/Results_Hyperband_2007/seed_{SEED}/{suite_id}_{task_id}.csv")
+            data4 = pd.read_csv(f"/Users/floris/Desktop/ETH/ETH_FS25/Semesterarbeit/Results_NUM_ITER/seed_{SEED}/{suite_id}_{task_id}.csv")
+            df = pd.concat([df, data1,data2,data3,data4], ignore_index=True)
 
             # Save the full dataset
             # df.to_csv("final_dataset.csv", index=False)
 
-    df.drop(columns=["iter", "val_score", "test_log_loss", "test_f1_score", "test_rmse", "current_best_test_score", "current_best_test_log_loss", "current_best_test_f1_score", "current_best_test_rmse", "try_num_leaves", "fold", "method", "classification"], inplace=True)
+    df.drop(columns=["iter", "val_score", "test_log_loss", "test_f1_score", "test_rmse", "current_best_test_score", "current_best_test_log_loss", "current_best_test_f1_score", "current_best_test_rmse", "try_num_leaves", "try_num_iter","joint_tuning_depth_leaves","fold", "method", "classification"], inplace=True)
 
     return df
 
