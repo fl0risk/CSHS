@@ -16,12 +16,12 @@ python_script_list=("model_gp_boosting.py" "model_lin_regr.py")
 requirements_file="requirements.txt"
 venv_name="Semesterarbeit"
 
-source "${venv_name}/bin/activate"
+#source "${venv_name}/bin/activate"
 task_id=$SLURM_ARRAY_TASK_ID
 python_script=${python_script_list[task_id]}
 # Run the Python script with calculated suite, seed, and custom task ID
 python "${python_script}" 
 
 # Deactivate virtual environment (not strictly necessary)
-deactivate
+#deactivate
 exit 0
