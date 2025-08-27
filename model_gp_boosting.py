@@ -55,7 +55,7 @@ def assess_gp_boosting(setting,classification: bool = False, try_max_depth: bool
 
         # Train the model
         bst = gpb.train(
-            params=params_dict, train_set=train_set, num_boost_round=20,#change back to 1000
+            params=params_dict, train_set=train_set, num_boost_round=1000,#change back to 1000
             valid_sets=[valid_set], early_stopping_rounds=20,
             verbose_eval=False
         )
@@ -65,7 +65,7 @@ def assess_gp_boosting(setting,classification: bool = False, try_max_depth: bool
         if score < min_score:
             min_score = score
         return score
-    scenario = Scenario(params, deterministic=True, n_trials=10, seed = SEED)#TODO check other_params adjust trials to 135
+    scenario = Scenario(params, deterministic=True, n_trials=135, seed = SEED)#TODO check other_params adjust trials to 135
     smac = HPOFacade(scenario,objective_opt,overwrite=True)
     incumbent = smac.optimize()
     rh = smac.runhistory
@@ -349,11 +349,11 @@ def main():
                 try_joint=params['try_joint'],
                 try_num_iter=params['try_num_iter']
             )
-            #plot_feature_importance(booster, X, path) #checked
-            plot_partial_dependence(booster, X, path) #checked
+            plot_feature_importance(booster, X, path) 
+            plot_partial_dependence(booster, X, path) 
             plot_interactions(booster, X, path)
-            # plt.close()
-            # plot_shap_values(booster, X, path)
+            plt.close()
+            plot_shap_values(booster, X, path)
 
 
 if __name__ == '__main__':

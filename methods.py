@@ -61,7 +61,27 @@ class ParameterOptimization:
         self.splits = self._split_data()
         self.df_trials = None #variable to store results from objective in hyperband method
         
+    def run_default(self,):
+        for fold, (full_train_index, test_index) in enumerate(self.splits):
+            X_train_full, X_test = self.X.iloc[full_train_index], self.X.iloc[test_index]
+            y_train_full, y_test = self.y.iloc[full_train_index], self.y.iloc[test_index]
+           
+            trials_default = self.default_method(
+                X_train_full=X_train_full, y_train_full=y_train_full, 
+                X_test=X_test, y_test=y_test, 
+            )
+            trials = eval(f'trials_default')
+            trials['fold'] = fold
+            trials['method'] = 'default'
 
+            if fold == 0: 
+                final_results = trials
+            else:
+                final_results = pd.concat([final_results, trials])
+        final_results.reset_index(inplace=True)
+        final_results.rename(columns={"index": "iter"}, inplace=True)
+        df_repeated = final_results.loc[final_results.index.repeat(135)]
+        return df_repeated
     def run_methods(self, ):
         """This function runs all hyperparameter tuning methods on the 5 folds and returns the results in a DataFrame."""
         # Iterate through the 5 folds
@@ -181,6 +201,72 @@ class ParameterOptimization:
         final_results.reset_index(inplace=True)
         final_results.rename(columns={"index": "iter"}, inplace=True)
         return final_results
+
+    def default_method(self, X_train_full, y_train_full, X_test, y_test):
+        # Perform hyperparameter tuning
+        train_set = gpb.Dataset(X_train_full, label=y_train_full)
+
+        X_train_full = X_train_full.reset_index(drop=True)
+        y_train_full = y_train_full.reset_index(drop=True)
+
+        test_scores = 0
+        test_log_loss = 0
+        test_f1_scores = 0
+        test_rmse = 0
+        #df.to_csv('Results/dataframe.csv', index=False)
+        
+        
+        train_set_full = gpb.Dataset(X_train_full, label=y_train_full)
+    
+        # Train the model
+        params = {}
+        bst = gpb.train(params=params,
+            train_set=train_set_full,
+            verbose_eval=False, num_boost_round = 1000 #Check if 1000 or 100
+        )
+        y_pred = bst.predict(data=X_test, pred_latent=False)
+        default_params = {
+            'learning_rate': [0.1],
+            'min_data_in_leaf': [20],
+            'max_depth': [-1],
+            'lambda_l2': [0],
+            'num_leaves': [31],
+            'max_bin':[255]
+        }
+        df = pd.DataFrame.from_dict(default_params)
+        # Evaluate the model based on the respective task
+        if self.suite_id in [334, 337]:
+            log_loss_score = log_loss(y_test, y_pred)
+            y_pred = (y_pred > 0.5).astype(int)
+            score = accuracy_score(y_test, y_pred)
+            f_1_score = f1_score(y_test, y_pred)
+            rmse = np.nan
+
+        else:
+            log_loss_score = np.nan
+            f_1_score = np.nan
+            score = r2_score(y_test, y_pred, force_finite=True)
+            rmse = root_mean_squared_error(y_test, y_pred)
+
+
+        test_scores = score
+        test_log_loss = log_loss_score
+        test_f1_scores = f_1_score
+        test_rmse = rmse
+
+        # Add the 'test_score' and the 'current_best_test_score' columns to the DataFrame
+        df['test_score'] = test_scores
+        df['test_log_loss'] = test_log_loss
+        df['test_f1_score'] = test_f1_scores
+        df['test_rmse'] = test_rmse
+        df['current_best_test_score'] = df['test_score'].cummax()
+        df['current_best_test_log_loss'] = df['test_log_loss'].cummin()
+        df['current_best_test_f1_score'] = df['test_f1_score'].cummax()
+        df['current_best_test_rmse'] = df['test_rmse'].cummin()
+
+        return df
+        
+        
 
     def grid_search_method(self, X_train_full, y_train_full, X_test, y_test, num_try_random=None):
         """This function performs fixed/random grid search on the model."""
@@ -644,7 +730,28 @@ class ParameterOptimization:
         return kf.split(self.X)
 
 
+    def _train_model_default(self,X_train, y_train, X_val, y_val):
+        train_set = gpb.Dataset(X_train, label=y_train) 
+        valid_set = gpb.Dataset(X_val, label=y_val)
+        bst = gpb.train(
+            train_set=train_set, valid_sets=[valid_set],
+            verbose_eval=False 
+        )
+        y_pred = bst.predict(data=X_val, pred_latent=False) #pred_latent = FALSE => response variable is predicted
 
+        # Get the best number of iterations
+        best_iter = bst.best_iteration
+
+        # Evaluate the model based on the respective task
+        if self.suite_id in [334, 337]:
+            y_pred = (y_pred > 0.5).astype(int)
+            score = 1 - accuracy_score(y_val, y_pred)
+
+        else:
+            score = root_mean_squared_error(y_val, y_pred)
+
+        return score, best_iter
+    
     def _train_model_for_validation(self, X_train, y_train, X_val, y_val, params, num_boost_round: int = 1000) -> float:
         """This function performs the model training and evaluation and returns the prediction accuracy based on the validation set."""
         params_copy = params.copy()
